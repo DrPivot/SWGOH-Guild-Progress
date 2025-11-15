@@ -1966,11 +1966,11 @@ def main():
     character_names_tab2 = [name for name, base_id in available_characters_tab2]
     
     if character_names_tab2:
-        # Character-Dropdown für Tab 2
+        # Character-Dropdown für Tab 2 - Key mit reset_suffix damit es zurückgesetzt wird
         selected_character_tab2 = st.sidebar.selectbox(
             "Charakter für Tab 2:",
             character_names_tab2,
-            key="tab2_character_select"
+            key=f"tab2_character_select{reset_suffix}"
         )
         
         # Session State aktualisieren
