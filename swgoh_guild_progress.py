@@ -245,9 +245,10 @@ def show_start_screen():
     # Header mit Logo und Titel nebeneinander
     col1, col2 = st.columns([1, 3])
     with col1:
-        st.image("assets/bataillon_logo.png", width=600)
+        st.image("assets/BA_Logo_rot.png", width=200)
     with col2:
-        st.title("SWGOH Guild Progress")
+        st.title("SWGOH")
+        st.header("Guild Progress")
     
     st.markdown("---")
     
