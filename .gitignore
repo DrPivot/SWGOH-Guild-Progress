@@ -42,6 +42,10 @@ desktop.ini
 *_backup.py
 *.bak
 
+# Temporary character analysis files
+get_character_csv.py
+data/character_relevance_template.csv
+
 # Data files (optional - entferne Zeilen wenn du Daten committen willst)
 # hu_data/*.csv
 # data/*.json

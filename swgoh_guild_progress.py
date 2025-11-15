@@ -3,13 +3,11 @@ import pandas as pd
 import json
 import glob
 import re
-import plotly.express as px
 import plotly.graph_objects as go
 import locale
-import requests
 from datetime import datetime
+from io import StringIO
 import os
-import sys
 
 # ============================================================================
 # KONFIGURATION
@@ -220,7 +218,6 @@ def get_final_df(guild_filter, selected_dates, upload_csv_data=None, upload_date
     # Füge Upload hinzu (falls übergeben UND Gilde stimmt überein!)
     if upload_csv_data is not None and upload_guild == guild_filter:
         # Parse Upload-CSV
-        from io import StringIO
         df_upload = pd.read_csv(StringIO(upload_csv_data))
         
         # Droppe UnitId-Spalte (wird nicht verwendet, spart Memory)
