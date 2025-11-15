@@ -856,11 +856,11 @@ def get_all_relic_counts_per_date(df_guild, player_base):
                     'R6': (df_chars['RelicLevel'] == 6).sum()
                 }
             else:
-                # Spieler nicht in diesem Datum - 0 Counts
+                # Spieler nicht in diesem Datum - None (nicht 0!)
                 counts = {
                     'AllyCode': ally_code,
                     'Name': player_name,
-                    'R10': 0, 'R9': 0, 'R8': 0, 'R7': 0, 'R6': 0
+                    'R10': None, 'R9': None, 'R8': None, 'R7': None, 'R6': None
                 }
             player_counts.append(counts)
         
@@ -905,8 +905,9 @@ def calculate_player_relic_overview(df_guild, player_base, relic_levels, compare
     for i, date in enumerate(available_dates):
         df_date_counts = counts_per_date[date]
         
-        # Summiere nur die gewählten Relic-Levels
-        df_date_counts['RelicCount'] = df_date_counts[relic_cols].sum(axis=1)
+        # Summiere nur die gewählten Relic-Levels - aber nur wenn nicht alle None sind!
+        # skipna=False bedeutet: wenn irgendein Wert None ist, bleibt das Ergebnis None
+        df_date_counts['RelicCount'] = df_date_counts[relic_cols].sum(axis=1, skipna=False)
         
         col_name = date
         date_columns.append(col_name)
@@ -918,17 +919,15 @@ def calculate_player_relic_overview(df_guild, player_base, relic_levels, compare
         )
         player_overview = player_overview.rename(columns={'RelicCount': col_name})
         
-        if i == 0:
-            player_overview[col_name] = player_overview[col_name].fillna(0).astype(int)
-        else:
-            player_overview[col_name] = player_overview[col_name].astype('Int64')
+        # Alle Spalten als Int64 (erlaubt None für fehlende Spieler)
+        player_overview[col_name] = player_overview[col_name].astype('Int64')
     
-    # Berechne Delta
+    # Berechne Delta nur wenn beide Werte vorhanden sind
     if compare_date in available_dates and compare_date != newest_date:
         compare_col = compare_date
         player_overview['Δ'] = player_overview.apply(
             lambda row: row[date_columns[0]] - row[compare_col] 
-            if pd.notna(row[compare_col]) else None,
+            if pd.notna(row[date_columns[0]]) and pd.notna(row[compare_col]) else None,
             axis=1
         )
     else:
@@ -974,11 +973,11 @@ def get_all_omicron_counts_per_date(df_guild, player_base):
                     **{col: df_player[col].sum() for col in omicron_cols}
                 }
             else:
-                # Spieler nicht in diesem Datum - 0 Counts
+                # Spieler nicht in diesem Datum - None (nicht 0!)
                 counts = {
                     'AllyCode': ally_code,
                     'Name': player_name,
-                    **{col: 0 for col in omicron_cols}
+                    **{col: None for col in omicron_cols}
                 }
             player_counts.append(counts)
         
@@ -1018,8 +1017,8 @@ def calculate_player_omicron_overview(df_guild, player_base, omicron_columns, co
     for i, date in enumerate(available_dates):
         df_date_counts = counts_per_date[date]
         
-        # Summiere nur die gewählten Omicron-Typen
-        df_date_counts['OmicronCount'] = df_date_counts[omicron_columns].sum(axis=1)
+        # Summiere nur die gewählten Omicron-Typen - aber nur wenn nicht alle None sind!
+        df_date_counts['OmicronCount'] = df_date_counts[omicron_columns].sum(axis=1, skipna=False)
         
         col_name = date
         date_columns.append(col_name)
@@ -1031,17 +1030,15 @@ def calculate_player_omicron_overview(df_guild, player_base, omicron_columns, co
         )
         player_overview = player_overview.rename(columns={'OmicronCount': col_name})
         
-        if i == 0:
-            player_overview[col_name] = player_overview[col_name].fillna(0).astype(int)
-        else:
-            player_overview[col_name] = player_overview[col_name].astype('Int64')
+        # Alle Spalten als Int64 (erlaubt None für fehlende Spieler)
+        player_overview[col_name] = player_overview[col_name].astype('Int64')
     
-    # Berechne Delta
+    # Berechne Delta nur wenn beide Werte vorhanden sind
     if compare_date in available_dates and compare_date != newest_date:
         compare_col = compare_date
         player_overview['Δ'] = player_overview.apply(
             lambda row: row[date_columns[0]] - row[compare_col] 
-            if pd.notna(row[compare_col]) else None,
+            if pd.notna(row[date_columns[0]]) and pd.notna(row[compare_col]) else None,
             axis=1
         )
     else:
@@ -1087,11 +1084,11 @@ def get_all_speed_mod_counts_per_date(df_guild, player_base):
                     **{col: df_player[col].sum() for col in speed_cols}
                 }
             else:
-                # Spieler nicht in diesem Datum - 0 Counts
+                # Spieler nicht in diesem Datum - None (nicht 0!)
                 counts = {
                     'AllyCode': ally_code,
                     'Name': player_name,
-                    **{col: 0 for col in speed_cols}
+                    **{col: None for col in speed_cols}
                 }
             player_counts.append(counts)
         
@@ -1131,8 +1128,8 @@ def calculate_player_speed_mod_overview(df_guild, player_base, speed_columns, co
     for i, date in enumerate(available_dates):
         df_date_counts = counts_per_date[date]
         
-        # Summiere nur die gewählten Speed-Thresholds
-        df_date_counts['SpeedModCount'] = df_date_counts[speed_columns].sum(axis=1)
+        # Summiere nur die gewählten Speed-Thresholds - aber nur wenn nicht alle None sind!
+        df_date_counts['SpeedModCount'] = df_date_counts[speed_columns].sum(axis=1, skipna=False)
         
         col_name = date
         date_columns.append(col_name)
@@ -1144,17 +1141,15 @@ def calculate_player_speed_mod_overview(df_guild, player_base, speed_columns, co
         )
         player_overview = player_overview.rename(columns={'SpeedModCount': col_name})
         
-        if i == 0:
-            player_overview[col_name] = player_overview[col_name].fillna(0).astype(int)
-        else:
-            player_overview[col_name] = player_overview[col_name].astype('Int64')
+        # Alle Spalten als Int64 (erlaubt None für fehlende Spieler)
+        player_overview[col_name] = player_overview[col_name].astype('Int64')
     
-    # Berechne Delta
+    # Berechne Delta nur wenn beide Werte vorhanden sind
     if compare_date in available_dates and compare_date != newest_date:
         compare_col = compare_date
         player_overview['Δ'] = player_overview.apply(
             lambda row: row[date_columns[0]] - row[compare_col] 
-            if pd.notna(row[compare_col]) else None,
+            if pd.notna(row[date_columns[0]]) and pd.notna(row[compare_col]) else None,
             axis=1
         )
     else:
