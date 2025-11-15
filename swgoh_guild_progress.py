@@ -174,7 +174,7 @@ def load_guild_data(guild_filter, selected_dates):
                     
                     # Füge Spalten hinzu
                     df['date'] = date_str
-                    df['guild'] = guild_filter
+                    # df['guild'] = guild_filter  ### Nicht nötig, da alle Daten der gleichen Gilde sind
                     
                     all_dataframes.append(df)
 
@@ -188,6 +188,11 @@ def load_guild_data(guild_filter, selected_dates):
     
     # Kombiniere alle DataFrames
     combined_df = pd.concat(all_dataframes, ignore_index=True)
+    
+    # Droppe UnitId-Spalte (wird nicht verwendet, spart Memory)
+    if 'UnitId' in combined_df.columns:
+        combined_df = combined_df.drop(columns=['UnitId'])
+    
     return combined_df
 
 @st.cache_data
@@ -218,6 +223,10 @@ def get_final_df(guild_filter, selected_dates, upload_csv_data=None, upload_date
         from io import StringIO
         df_upload = pd.read_csv(StringIO(upload_csv_data))
         
+        # Droppe UnitId-Spalte (wird nicht verwendet, spart Memory)
+        if 'UnitId' in df_upload.columns:
+            df_upload = df_upload.drop(columns=['UnitId'])
+        
         # Validierung: Spieler-Übereinstimmung
         if 'AllyCode' in df_upload.columns and 'AllyCode' in df_cached.columns:
             upload_players = set(df_upload['AllyCode'].unique())
@@ -230,7 +239,7 @@ def get_final_df(guild_filter, selected_dates, upload_csv_data=None, upload_date
         
         # Kombiniere beide DataFrames
         df_upload = df_upload.copy()
-        df_upload['guild'] = guild_filter
+        # df_upload['guild'] = guild_filter   ### Nicht nötig, da nur Daten der gleichen Gilde hochgeladen werden können
         df_upload['date'] = upload_date if upload_date else datetime.now().strftime('%Y-%m-%d')
         
         df_final = pd.concat([df_upload, df_cached], ignore_index=True)
@@ -577,9 +586,11 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
         b = int(hex_color[4:6], 16)
         return f'rgba({r},{g},{b},{opacity})'
     
-    # Diagramme in einem Container mit fester Breite (Player: 200px + 10*150 = 1700px)
-    with st.container(width=1800, gap=None):
-        
+    # Diagramme in einem Container mit fester Breite (Player: 200px -6px Ausrichtung + 10 Spalten mit 150px + 10px gap)
+    with st.container(width=1794, gap="small"):
+        # Charts mit perfekter Ausrichtung zur nachfolgende Tabelle anzeigen
+        chart_cols = st.columns([194] + [150] * 10, gap="small")
+
         # Erstelle Lookup-Dictionaries EINMAL für ALLE Charts (statt 10x pro Chart!)
         player_checked = dict(zip(player_base['Name'], player_base['Checked']))
         player_colors = dict(zip(player_base['Name'], player_base['PlayerColor']))
@@ -590,13 +601,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
             for name, color in player_colors.items() 
             if player_checked.get(name, False)
         }
-        
-        # Diagramme nebeneinander anzeigen - wie gewünscht!
-        
-        # Charts mit perfekter Ausrichtung anzeigen (jetzt 10 Stats)
-        # KEINE Checkbox-Spalte mehr! Nur Player: 200px + 10*150px Charts
-        chart_cols = st.columns([200] + [150] * 10, gap="small")
-        
+                
         with chart_cols[0]:
             st.markdown("")  # Spacer für Player-Spalte
         
@@ -654,7 +659,8 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
                     'title': "",  # Kein x-Achsen Titel
                     'showgrid': False,
                     'zeroline': False,
-                    'fixedrange': True
+                    'fixedrange': True,
+                    'range': [-0.5, len(stat_data) + 0.5]  # Symmetrische Range mit Padding
                 },
                 yaxis={
                     'showticklabels': False,  # Keine y-Achsen Werte
@@ -664,9 +670,9 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
                     'fixedrange': True,
                     'automargin': False  # Verhindert automatische Margins für y-Achse
                 },
-                width=150,  # Chart-Breite: 150px
+                width=150,  # Chart-Breite: 152px
                 height=150,  # Kompakte Höhe
-                margin={'l': 2, 'r': 2, 't': 24, 'b': 1},  # Null Margins für maximale Nutzung
+                margin={'l': 2, 'r': 4, 't': 24, 'b': 1},  # Minimale Margins
                 bargap=0,  # Kein Abstand zwischen Balken
                 plot_bgcolor='rgba(0,0,0,0)',  # Transparenter Hintergrund
                 paper_bgcolor='rgba(0,0,0,0)',  # Transparenter Hintergrund
@@ -677,14 +683,14 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
                     'font': {'size': 12}
                 },
                 shapes=[
-                    # Rahmen um den Chart
+                    # Rahmen um den Plot-Bereich
                     dict(
                         type='rect',
-                        xref='paper',
+                        xref='x',
                         yref='paper',
-                        x0=0,
+                        x0=-2,
                         y0=0,
-                        x1=1,
+                        x1=len(stat_data) + 1,
                         y1=1,
                         line=dict(
                             color='#444444',
@@ -696,7 +702,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
             )
             
             with chart_cols[i + 1]:  # Index +1 wegen nur Player Spalte (keine Checkbox mehr!)
-                st.plotly_chart(fig, width='content', config={'displayModeBar': False}, key=f"chart_{stat}")
+                st.plotly_chart(fig, use_container_width=False, config={'displayModeBar': False}, key=f"chart_{stat}")
     
     # Tabelle direkt unter den Diagrammen (ohne große Lücke)
     # st.markdown("")  # Minimaler Abstand
@@ -1259,9 +1265,10 @@ def show_player_overview_tab(df_guild, compare_date):
         'Metric': st.column_config.TextColumn('Metric', width=110)
     }
     
-    # Datums-Spalten als Zahlen
+    # Datums-Spalten als Zahlen (Vergleichsdatum mit 📍 markieren)
     for col in date_columns:
-        column_config[col] = st.column_config.NumberColumn(col, format='%d', width=120)
+        label = f"📍 {col}" if col == compare_date else col
+        column_config[col] = st.column_config.NumberColumn(label, format='%d', width=120)
     
     # on_select Callback für Cell-Selection
     def on_relics_select():
@@ -1423,9 +1430,10 @@ def show_player_omicrons_tab(df_guild, compare_date):
         'Metric': st.column_config.TextColumn('Metric', width=110)
     }
     
-    # Datums-Spalten als Zahlen
+    # Datums-Spalten als Zahlen (Vergleichsdatum mit 📍 markieren)
     for col in date_columns:
-        column_config[col] = st.column_config.NumberColumn(col, format='%d', width=120)
+        label = f"📍 {col}" if col == compare_date else col
+        column_config[col] = st.column_config.NumberColumn(label, format='%d', width=120)
     
     # on_select Callback für Cell-Selection
     def on_omicrons_select():
@@ -1587,9 +1595,10 @@ def show_player_speed_mods_tab(df_guild, compare_date):
         'Metric': st.column_config.TextColumn('Metric', width=110)
     }
     
-    # Datums-Spalten als Zahlen
+    # Datums-Spalten als Zahlen (Vergleichsdatum mit 📍 markieren)
     for col in date_columns:
-        column_config[col] = st.column_config.NumberColumn(col, format='%d', width=120)
+        label = f"📍 {col}" if col == compare_date else col
+        column_config[col] = st.column_config.NumberColumn(label, format='%d', width=120)
        
     # on_select Callback für Cell-Selection
     def on_speed_mods_select():
