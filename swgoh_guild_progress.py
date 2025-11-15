@@ -42,6 +42,16 @@ except:
     except:
         pass  # Fallback wenn keine deutsche Locale verfügbar
 
+# CSS um hochgeladenen Dateinamen zu verstecken
+st.markdown("""
+    <style>
+    /* Verstecke die hochgeladene Datei-Liste (stabile Klasse: e16n7gab7) */
+    [data-testid="stFileUploader"] .e16n7gab7 {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 @st.cache_data
 def load_character_data():
     """Lädt die Charakterdaten aus der JSON-Datei."""
@@ -103,7 +113,7 @@ def get_available_guilds():
 
 @st.cache_data
 def get_dates_for_guild(guild_name):
-    """Gibt alle verfügbaren Daten für eine Guild zurück."""
+    """Gibt alle verfügbaren Daten für eine Guild zurück (nur Repository)."""
     pattern = f"hu_data/*{guild_name}Full.csv"
     files = glob.glob(pattern)
     
@@ -113,12 +123,23 @@ def get_dates_for_guild(guild_name):
         match = re.match(r'(\d{4}-\d{2}-\d{2})\s+.+?Full\.csv', filename)
         if match:
             date_str = match.group(1)
-            dates_info.append({'Datum': date_str})
+            dates_info.append({'Datum': date_str, 'Quelle': 'Repo'})
     
     # Sortiere nach Datum (neueste zuerst)
     dates_df = pd.DataFrame(dates_info)
     if not dates_df.empty:
         dates_df = dates_df.sort_values('Datum', ascending=False)
+    return dates_df
+
+def get_dates_with_upload(guild_name, upload_date=None, upload_guild=None):
+    """Gibt Repo-Daten + Upload zurück (falls vorhanden UND Gilde stimmt überein)."""
+    dates_df = get_dates_for_guild(guild_name)
+    
+    # Füge Upload hinzu (nur wenn vorhanden UND Gilde stimmt überein!)
+    if upload_date and upload_guild == guild_name:
+        upload_row = pd.DataFrame([{'Datum': upload_date, 'Quelle': '📤 Upload'}])
+        dates_df = pd.concat([upload_row, dates_df], ignore_index=True)
+    
     return dates_df
 
 @st.cache_data
@@ -169,23 +190,50 @@ def load_guild_data(guild_filter, selected_dates):
     combined_df = pd.concat(all_dataframes, ignore_index=True)
     return combined_df
 
-def get_final_df(guild_filter, selected_dates):
-    """Kombiniert gecachte Daten + optionalen Upload."""
-    # Lade gecachte CSVs
+@st.cache_data
+def get_final_df(guild_filter, selected_dates, upload_csv_data=None, upload_date=None, upload_guild=None):
+    """
+    Kombiniert gecachte Repository-Daten + optionalen Upload (MIT CACHING!).
+    Upload wird im Cache gespeichert - alle User der gleichen Gilde profitieren während App läuft.
+    
+    Args:
+        guild_filter: Name der Gilde
+        selected_dates: Tuple der ausgewählten Daten aus Repository
+        upload_csv_data: Optional - Upload-CSV als String (für Cache-Key)
+        upload_date: Optional - Datum des Uploads
+        upload_guild: Optional - Gilde des Uploads (für Validierung)
+    
+    Returns:
+        DataFrame mit allen Daten (Repository + Upload falls vorhanden)
+    """
+    # Lade gecachte CSVs aus Repository
     df_cached = load_guild_data(guild_filter, tuple(selected_dates))
     
     if df_cached is None:
         return None
     
-    # Füge Upload hinzu (falls vorhanden)
-    if 'uploaded_csv_df' in st.session_state:
-        df_upload = st.session_state.uploaded_csv_df.copy()
-        df_upload['guild'] = guild_filter
-        df_upload['date'] = datetime.now().strftime('%Y-%m-%d')
+    # Füge Upload hinzu (falls übergeben UND Gilde stimmt überein!)
+    if upload_csv_data is not None and upload_guild == guild_filter:
+        # Parse Upload-CSV
+        from io import StringIO
+        df_upload = pd.read_csv(StringIO(upload_csv_data))
         
-        # Kombiniere beide
+        # Validierung: Spieler-Übereinstimmung
+        if 'AllyCode' in df_upload.columns and 'AllyCode' in df_cached.columns:
+            upload_players = set(df_upload['AllyCode'].unique())
+            cached_players = set(df_cached['AllyCode'].unique())
+            common_players = upload_players & cached_players
+            
+            if not common_players:
+                # KEINE gemeinsamen Spieler = fremde Gilde → Return empty DataFrame
+                return pd.DataFrame()
+        
+        # Kombiniere beide DataFrames
+        df_upload = df_upload.copy()
+        df_upload['guild'] = guild_filter
+        df_upload['date'] = upload_date if upload_date else datetime.now().strftime('%Y-%m-%d')
+        
         df_final = pd.concat([df_upload, df_cached], ignore_index=True)
-        st.sidebar.success(f"✅ Upload ({len(df_upload)} Zeilen) hinzugefügt!")
     else:
         df_final = df_cached
     
@@ -194,101 +242,204 @@ def get_final_df(guild_filter, selected_dates):
 def show_start_screen():
     """Zeigt Startbildschirm mit Guild-Auswahl, Date-Auswahl und CSV-Upload."""
     
-    # Optional: Logo/Header-Image
-    st.image("assets/bataillon_logo.png", width=400)  # Uncomment wenn du ein Logo hast
-    
-    st.title("🎮 SWGOH Guild Progress")
-    st.markdown("---")
-    
-    # Schritt 1: Guild auswählen
-    st.subheader("📋 Schritt 1: Wähle deine Gilde")
-    
-    guilds_df = get_available_guilds()
-    
-    if guilds_df.empty:
-        st.error("❌ Keine Gilden gefunden! Bitte CSVs in hu_data/ Ordner ablegen.")
-        st.info("📝 Dateinamen-Format: `YYYY-MM-DD GuildNameFull.csv`")
-        return
-    
-    # Guild-Tabelle mit single-row selection
-    guild_selection = st.dataframe(
-        guilds_df,
-        hide_index=True,
-        selection_mode="single-row",
-        on_select=lambda: None,  # Callback kommt unten
-        key="guild_selection",
-        use_container_width=True
-    )
-    
-    # Extrahiere ausgewählte Guild
-    selected_guild_rows = guild_selection.selection.rows if hasattr(guild_selection, 'selection') else []
-    
-    if selected_guild_rows:
-        selected_guild_idx = selected_guild_rows[0]
-        selected_guild = guilds_df.iloc[selected_guild_idx]['Guild Name']
-        st.session_state.selected_guild = selected_guild
+    # Header mit Logo und Titel nebeneinander
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("assets/bataillon_logo.png", width=400)
+    with col2:
+        st.title("SWGOH Guild Progress")
     
     st.markdown("---")
     
-    # Schritt 2: Dates auswählen (nur wenn Guild gewählt)
-    if 'selected_guild' in st.session_state:
-        st.subheader(f"📅 Schritt 2: Wähle Daten für {st.session_state.selected_guild}")
+    # Zwei-Spalten-Layout für Guild und Dates
+    col_guild, col_dates = st.columns([1, 1])
+    
+    # Linke Spalte: Guild auswählen
+    with col_guild:
+        st.subheader("📋 Schritt 1: Gildenauswahl")
         
-        dates_df = get_dates_for_guild(st.session_state.selected_guild)
+        guilds_df = get_available_guilds()
         
-        if dates_df.empty:
-            st.warning(f"⚠️ Keine Daten für {st.session_state.selected_guild} gefunden!")
+        if guilds_df.empty:
+            st.error("❌ Keine Gilden gefunden! Bitte CSVs in hu_data/ Ordner ablegen.")
+            st.info("📝 Dateinamen-Format: `YYYY-MM-DD GuildNameFull.csv`")
+            return
+        
+        # Guild-Tabelle mit single-row selection
+        guild_selection = st.dataframe(
+            guilds_df,
+            hide_index=True,
+            selection_mode="single-row",
+            on_select=lambda: None,
+            key="guild_selection",
+            width='stretch'
+        )
+        
+        # Extrahiere ausgewählte Guild
+        selected_guild_rows = guild_selection.selection.rows if hasattr(guild_selection, 'selection') else []
+        
+        if selected_guild_rows:
+            selected_guild_idx = selected_guild_rows[0]
+            selected_guild = guilds_df.iloc[selected_guild_idx]['Guild Name']
+            st.session_state.selected_guild = selected_guild
+    
+    # Rechte Spalte: Dates auswählen (nur wenn Guild gewählt)
+    with col_dates:
+        st.subheader(f"📅 Schritt 2: Datumsauswahl")
+        if 'selected_guild' in st.session_state:
+            # Hole Upload-Datum und Upload-Gilde falls vorhanden
+            upload_date = None
+            upload_guild = None
+            if 'uploaded_csv_df' in st.session_state:
+                upload_date = st.session_state.get('uploaded_csv_date', None)
+                upload_guild = st.session_state.get('uploaded_csv_guild', None)
+            
+            # Hole Daten inkl. Upload (Upload nur wenn Gilde übereinstimmt!)
+            dates_df = get_dates_with_upload(st.session_state.selected_guild, upload_date, upload_guild)
+            
+            if dates_df.empty:
+                st.warning(f"⚠️ Keine Daten für {st.session_state.selected_guild} gefunden!")
+            else:
+                # Dates-Tabelle mit multi-row selection
+                dates_selection = st.dataframe(
+                    dates_df,
+                    hide_index=True,
+                    selection_mode="multi-row",
+                    on_select=lambda: None,
+                    key="dates_selection",
+                    width='stretch'
+                )
+                
+                # Extrahiere ausgewählte Dates
+                selected_date_rows = dates_selection.selection.rows if hasattr(dates_selection, 'selection') else []
+                
+                if selected_date_rows:
+                    # Filtere Upload-Zeilen raus (Upload wird separat behandelt!)
+                    selected_dates = [
+                        dates_df.iloc[idx]['Datum'] 
+                        for idx in selected_date_rows 
+                        if dates_df.iloc[idx]['Quelle'] == 'Repo'
+                    ]
+                    st.session_state.selected_dates = selected_dates
+                    
+                    # Prüfe ob Upload ausgewählt wurde
+                    has_upload_selected = any(
+                        dates_df.iloc[idx]['Quelle'] == '📤 Upload' 
+                        for idx in selected_date_rows
+                    )
+                    
+                    # Info-Text
+                    repo_count = len(selected_dates)
+                    upload_text = " + Upload" if has_upload_selected else ""
+                    st.info(f"✅ {repo_count} Repo-CSV(s){upload_text} ausgewählt")
         else:
-            # Dates-Tabelle mit multi-row selection
-            dates_selection = st.dataframe(
-                dates_df,
-                hide_index=True,
-                selection_mode="multi-row",
-                on_select=lambda: None,
-                key="dates_selection",
-                use_container_width=True
-            )
+            st.info("👈 Bitte zuerst eine Gilde auswählen")
+    
+    # Schritt 3 & 4: CSV Upload und Start-Button (volle Breite)
+    if 'selected_guild' in st.session_state:
+        st.markdown("---")
+        
+        # Schritt 3: Optional CSV hochladen
+        st.subheader("📤 Schritt 3: Neue CSV hochladen (optional)")
+        
+        # Prüfe ob bereits ein Upload existiert
+        has_existing_upload = 'uploaded_csv_df' in st.session_state
+        
+        if has_existing_upload:
+            # Zeige Success-Meldung nach Upload
+            upload_date = st.session_state.get('uploaded_csv_date', 'Unbekannt')
+            upload_guild = st.session_state.get('uploaded_csv_guild', 'Unbekannt')
+            upload_rows = len(st.session_state.uploaded_csv_df)
+            st.success(f"✅ {upload_rows} Zeilen für {upload_guild} hochgeladen! (Datum: {upload_date})")
             
-            # Extrahiere ausgewählte Dates
-            selected_date_rows = dates_selection.selection.rows if hasattr(dates_selection, 'selection') else []
-            
-            if selected_date_rows:
-                selected_dates = [dates_df.iloc[idx]['Datum'] for idx in selected_date_rows]
-                st.session_state.selected_dates = selected_dates
-                st.info(f"✅ {len(selected_dates)} Datum/Daten ausgewählt")
-            
-            st.markdown("---")
-            
-            # Schritt 3: Optional CSV hochladen
-            st.subheader("📤 Schritt 3: Neue CSV hochladen (optional)")
-            
-            uploaded_file = st.file_uploader(
-                "Neue CSV-Datei hochladen",
-                type=['csv'],
-                help="Optional: Lade eine neue CSV hoch (wird als neuestes Datum behandelt)"
-            )
-            
-            if uploaded_file is not None:
-                try:
-                    df_upload = pd.read_csv(uploaded_file)
-                    st.session_state.uploaded_csv_df = df_upload
-                    st.success(f"✅ {len(df_upload)} Zeilen hochgeladen! (Datum: heute)")
-                except Exception as e:
-                    st.error(f"❌ Fehler beim Laden der CSV: {e}")
-            
-            st.markdown("---")
-            
-            # Schritt 4: Start-Button
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col2:
-                if st.button("▶️ Start Analysis", type="primary", use_container_width=True):
+            st.info("ℹ️ Nur ein Upload pro Session erlaubt.")
+            if st.button("🗑️ Aktuellen Upload löschen"):
+                del st.session_state['uploaded_csv_df']
+                del st.session_state['uploaded_csv_data']
+                del st.session_state['uploaded_csv_date']
+                del st.session_state['uploaded_csv_guild']
+                if 'upload_validation_warnings' in st.session_state:
+                    del st.session_state['upload_validation_warnings']
+                if 'upload_guild_mismatch' in st.session_state:
+                    del st.session_state['upload_guild_mismatch']
+                st.rerun()
+        
+        uploaded_file = st.file_uploader(
+            "Neue CSV-Datei hochladen",
+            type=['csv'],
+            help="Optional: Lade eine neue CSV hoch (Format: YYYY-MM-DD GuildNameFull.csv)",
+            disabled=has_existing_upload
+        )
+        
+        if uploaded_file is not None and 'uploaded_csv_df' not in st.session_state:
+            try:
+                df_upload = pd.read_csv(uploaded_file)
+                
+                # Validierung 1 & 2: Dateiname prüfen (falls vorhanden)
+                filename = uploaded_file.name
+                upload_date = datetime.now().strftime('%Y-%m-%d')  # Default: heute
+                validation_warnings = []
+                
+                if filename:
+                    # Versuche Datum und Gildenname zu extrahieren
+                    match = re.match(r'(\d{4}-\d{2}-\d{2})\s+(.+?)Full\.csv', filename)
+                    if match:
+                        extracted_date = match.group(1)
+                        extracted_guild = match.group(2).strip()
+                        
+                        # Prüfung 1: Passt Gildenname zur ausgewählten Gilde?
+                        selected_guild = st.session_state.selected_guild
+                        if extracted_guild != selected_guild:
+                            validation_warnings.append(f"⚠️ Gildennamen-Mismatch: Datei enthält '{extracted_guild}', aber '{selected_guild}' ist ausgewählt!")
+                            st.session_state.upload_guild_mismatch = True  # Flag für Start-Button
+                        else:
+                            st.session_state.upload_guild_mismatch = False
+                        
+                        # Prüfung 2: Nutze Datum aus Dateinamen
+                        upload_date = extracted_date
+                    else:
+                        # Kein Match im Dateinamen - Upload erlauben (könnte manuell umbenannt sein)
+                        st.session_state.upload_guild_mismatch = False
+                else:
+                    # Kein Dateiname - Upload erlauben
+                    st.session_state.upload_guild_mismatch = False
+                
+                # Speichere Upload in Session State + CSV-String für Cache (EINMALIG!)
+                st.session_state.uploaded_csv_df = df_upload
+                st.session_state.uploaded_csv_data = df_upload.to_csv(index=False)  # Einmalige Konvertierung!
+                st.session_state.uploaded_csv_date = upload_date
+                st.session_state.uploaded_csv_guild = st.session_state.selected_guild  # Speichere Gilde!
+                st.session_state.upload_validation_warnings = validation_warnings
+                
+                # Zeige Warnings falls vorhanden
+                for warning in validation_warnings:
+                    st.warning(warning)
+                
+                # Rerun um Upload-Zeile in Tabelle anzuzeigen (Success-Meldung kommt nach Rerun!)
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Fehler beim Laden der CSV: {e}")
+        
+        st.markdown("---")
+        
+        # Schritt 4: Start-Button
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+                # Prüfe ob Upload-Gilde nicht passt
+                guild_mismatch = st.session_state.get('upload_guild_mismatch', False)
+                button_disabled = guild_mismatch
+                
+                if button_disabled:
+                    st.error("🚫 Start blockiert: Gildennamen-Mismatch!")
+                    st.info("💡 Nur Gilden aus dem Repository dürfen das Tool nutzen.")
+                
+                if st.button("▶️ Start Analysis", type="primary", width='stretch', disabled=button_disabled):
                     if 'selected_dates' in st.session_state and st.session_state.selected_dates:
                         st.session_state.analysis_started = True
                         st.rerun()
                     else:
                         st.warning("⚠️ Bitte mindestens ein Datum auswählen!")
-    else:
-        st.info("👆 Bitte zuerst eine Gilde auswählen")
 
 def apply_filters(characters_data, alignment_filter, categories_filter, role_filter, ability_classes_filter):
     """Wendet Filter auf die Charakterdaten an."""
@@ -309,7 +460,7 @@ def apply_filters(characters_data, alignment_filter, categories_filter, role_fil
     return filtered
 
 def show_character_overview(df, filtered_characters, characters_data, filters_active):
-    st.subheader("📊 Character Overview")
+    st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">📋 Character Overview</h3>', unsafe_allow_html=True)
     
     # Falls Filter angewendet wurden, nur gefilterte Charaktere anzeigen
     if filters_active:
@@ -370,10 +521,10 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
     char_overview = char_overview.reset_index(drop=True)
     
     # Tabelle anzeigen mit kleiner Zeilenhöhe für mehr sichtbare Zeilen
-    # row_height=22 ermöglicht ca. 50 Zeilen bei 1140px Container-Höhe
-    st.dataframe(char_overview, hide_index=True, width="stretch", height=1140, row_height=22)
+    # row_height=21 ermöglicht ca. 50 Zeilen bei 1140px Container-Höhe
+    st.dataframe(char_overview, hide_index=True, width="stretch", height=1100, row_height=21)
 
-def show_analytics_tab(df, filtered_characters, characters_data, filters_active, selected_player):
+def show_analytics_tab(df, filtered_characters, characters_data, filters_active):
     """Tab 2 - Character Stats mit Multi-Player Vergleich via Checkboxen."""
     
     # Hole player_base DIREKT aus Session State (nicht als Parameter!)
@@ -411,21 +562,10 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active,
         st.warning(f"❌ Keine Daten für {selected_character_name} gefunden.")
         return
     
-    st.subheader(f"📊 Character Stats für {selected_character_name}")
+    st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">📊 Character Stats für {selected_character_name}</h3>', unsafe_allow_html=True)
     
     # Alle Stats aus der Tabelle für Diagramme (CritChance vor CritDamage)
     stats_columns = ['Speed', 'Health', 'Protection', 'Armor', 'Damage', 'CritChance', 'CritDamage', 'Potency', 'Tenacity', 'RelicLevel']
-    
-    # Hilfsfunktion: Farbe für Spieler ermitteln - nutzt player_base['Checked']
-    def get_player_color(player_name):
-        """Gibt Farbe für Spieler zurück: Checked = feste Farbe aus player_base, sonst dunkelgrau."""
-        # Prüfe in player_base ob gecheckt
-        is_checked = player_base.loc[player_base['Name'] == player_name, 'Checked'].iloc[0] if player_name in player_base['Name'].values else False
-        if is_checked:
-            color = player_base.loc[player_base['Name'] == player_name, 'PlayerColor'].iloc[0]
-            return color
-        else:
-            return "#222222"  # Sehr dunkles Grau für unchecked
     
     # Hilfsfunktion: Hex zu RGBA mit Transparenz
     def hex_to_rgba(hex_color, opacity=0.6):
@@ -436,14 +576,25 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active,
         b = int(hex_color[4:6], 16)
         return f'rgba({r},{g},{b},{opacity})'
     
-    # Diagramme in einem Container mit fester Breite (Player: 168px + 32 für row-select + 10*180 = 1975px)
-    with st.container(width=2000, gap=None):
+    # Diagramme in einem Container mit fester Breite (Player: 200px + 10*150 = 1700px)
+    with st.container(width=1800, gap=None):
+        
+        # Erstelle Lookup-Dictionaries EINMAL für ALLE Charts (statt 10x pro Chart!)
+        player_checked = dict(zip(player_base['Name'], player_base['Checked']))
+        player_colors = dict(zip(player_base['Name'], player_base['PlayerColor']))
+        
+        # Precompute RGBA colors für alle checked players (statt 50x pro Chart!)
+        player_colors_rgba = {
+            name: hex_to_rgba(color, 0.6) 
+            for name, color in player_colors.items() 
+            if player_checked.get(name, False)
+        }
         
         # Diagramme nebeneinander anzeigen - wie gewünscht!
         
         # Charts mit perfekter Ausrichtung anzeigen (jetzt 10 Stats)
-        # KEINE Checkbox-Spalte mehr! Nur Player: 168px + 32 für row-select
-        chart_cols = st.columns([200] + [180] * 10, gap=None)
+        # KEINE Checkbox-Spalte mehr! Nur Player: 200px + 10*150px Charts
+        chart_cols = st.columns([200] + [150] * 10, gap="small")
         
         with chart_cols[0]:
             st.markdown("")  # Spacer für Player-Spalte
@@ -466,18 +617,8 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active,
             # Daten für diesen Stat vorbereiten - absteigend sortiert
             stat_data = df_character[['Name', 'AllyCode', stat]].sort_values(stat, ascending=False)
             
-            # Farben für Balken: Checked players = gedämpfte RGBA-Farbe, andere = dunkelgrau
-            # Prüfe für jeden Spieler ob in player_base['Checked'] == True
-            colors = []
-            for name in stat_data['Name']:
-                is_checked = player_base.loc[player_base['Name'] == name, 'Checked'].iloc[0] if name in player_base['Name'].values else False
-                if is_checked:
-                    # Checked: RGBA-Farbe
-                    color = player_base.loc[player_base['Name'] == name, 'PlayerColor'].iloc[0]
-                    colors.append(hex_to_rgba(color, 0.6))
-                else:
-                    # Unchecked: dunkelgrau
-                    colors.append(get_player_color(name))
+            # Farben für Balken: Vektorisierte Operation (blitzschnell!)
+            colors = stat_data['Name'].map(lambda name: player_colors_rgba.get(name, "#222222")).tolist()
             
             # Hover-Text erstellen: Name + Wert
             hover_texts = [
@@ -485,7 +626,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active,
                 for _, row in stat_data.iterrows()
             ]
             
-            # Chart erstellen mit plotly - exakt 180px Breite
+            # Chart erstellen mit plotly - exakt 150px Breite
             fig = go.Figure()
             # Balken (farbig oder dunkelgrau)
             fig.add_trace(go.Bar(
@@ -522,7 +663,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active,
                     'fixedrange': True,
                     'automargin': False  # Verhindert automatische Margins für y-Achse
                 },
-                width=180,  # Chart-Breite: 180px
+                width=150,  # Chart-Breite: 150px
                 height=150,  # Kompakte Höhe
                 margin={'l': 2, 'r': 2, 't': 24, 'b': 1},  # Null Margins für maximale Nutzung
                 bargap=0,  # Kein Abstand zwischen Balken
@@ -607,34 +748,48 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active,
     # Styling anwenden
     styled_df = display_df_clean.style.apply(highlight_players, axis=1)
     
-    # Spalten-Konfiguration: 32px für row-select + Player (168px) + Stats mit Prozenten wo nötig
+    # Spalten-Konfiguration: 32px für row-select + Player (200px) + Stats mit Prozenten wo nötig
     column_config = {
-        'Player': st.column_config.TextColumn(width=168)
+        'Player': st.column_config.TextColumn(width=200)
     }
     
     for col in display_df_clean.columns:
         if col != 'Player':
             if col in percent_columns:
                 # Prozent-Spalten
-                column_config[col] = st.column_config.NumberColumn(width=180, format="%.1f %%")
+                column_config[col] = st.column_config.NumberColumn(width=160, format="%.1f %%")
             else:
                 # Normale Zahlen
-                column_config[col] = st.column_config.NumberColumn(width=180, format="%.0f")
+                column_config[col] = st.column_config.NumberColumn(width=160, format="%.0f")
     
-    # on_select Callback für Row-Selection
+    # on_select Callback für Cell-Selection
     def on_player_select():
-        """Callback wenn Spieler ausgewählt/abgewählt wird - toggle nur die geklickten Rows."""
-        print(f"\n[ON_SELECT CALLBACK] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
-        
+        """Callback wenn Spieler-Zelle ausgewählt wird - toggle den Spieler der Zeile."""
         # Hole Selection-Event
         selection = st.session_state.player_comparison_table_selection
-        selected_rows = selection.get('selection', {}).get('rows', [])
         
-        print(f"[ON_SELECT] Selected rows: {selected_rows}", file=sys.stderr)
+        # Zugriff auf selection dict
+        if hasattr(selection, 'selection'):
+            sel_dict = selection.selection
+        elif isinstance(selection, dict):
+            sel_dict = selection.get('selection', {})
+        else:
+            return
         
-        # Toggle nur die selected rows (User-Click = Toggle!)
-        for row_idx in selected_rows:
+        selected_cells = sel_dict.get('cells', [])
+        
+        # Extrahiere Zeilen-Index aus erster Zelle: (row_idx, column_name)
+        if selected_cells:
+            cell = selected_cells[0]
+            if isinstance(cell, (list, tuple)) and len(cell) >= 1:
+                row_idx = cell[0]
+            elif isinstance(cell, dict):
+                row_idx = cell.get('row', 0)
+            else:
+                return
+            
             player_name = display_df_clean.iloc[row_idx]['Player']
+            
             if player_name in st.session_state.player_base_global['Name'].values:
                 # Toggle: checked → unchecked, unchecked → checked
                 current_state = st.session_state.player_base_global.loc[
@@ -646,66 +801,19 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active,
                     st.session_state.player_base_global['Name'] == player_name, 
                     'Checked'
                 ] = not current_state
-        
-        print(f"[ON_SELECT CALLBACK END] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
     
     # Tabelle mit on_select
     st.dataframe(
         styled_df,
         hide_index=True,
-        width=2000,
+        width=1810,
         column_config=column_config,
-        height=900,
-        row_height=22,
-        selection_mode="single-row",
+        height=960,
+        row_height=20,
+        selection_mode="single-cell",
         on_select=on_player_select,
         key="player_comparison_table_selection"
     )
-
-@st.cache_data
-def get_guild_filtered_data(df_all, guild_filter):
-    """
-    Filtert Daten für eine spezifische Gilde (mit Caching).
-    Wird von allen Usern derselben Gilde geteilt.
-    
-    Args:
-        df_all: Kompletter DataFrame mit allen Guilds und Daten
-        guild_filter: Ausgewählte Gilde
-    
-    Returns:
-        DataFrame: Gefilterte Daten nur für diese Gilde
-    """
-    return df_all[df_all['guild'] == guild_filter]
-
-@st.cache_data
-def get_player_base_data(df_guild, guild_filter, available_dates_per_guild):
-    """
-    Bereitet gemeinsame Basis-Daten für Player-Tabs vor (MIT Caching, pro Guild).
-    Verwendet bereits gecachte df_guild und available_dates.
-    
-    Args:
-        df_guild: Gefilterte Daten für diese Gilde (aus Cache)
-        guild_filter: Name der Gilde (für Cache-Key)
-        available_dates_per_guild: Dict mit Dates pro Guild (gecacht aus load_guild_data)
-    
-    Returns:
-        Tuple: (available_dates, newest_date, player_base)
-        - available_dates: Sortierte Liste aller Daten (neueste zuerst) - aus gecachtem Dict!
-        - newest_date: Neustes verfügbares Datum
-        - player_base: DataFrame mit [AllyCode, Name] aus neuester CSV (OHNE PlayerColor)
-    """
-    # Hole Dates aus gecachtem Dict (bereits sortiert, neueste zuerst!)
-    available_dates = available_dates_per_guild[guild_filter]
-    newest_date = available_dates[0]  # Erstes Element = neuestes Datum
-    
-    # Spielerliste aus neuestem Datum
-    df_newest = df_guild[df_guild['date'] == newest_date]
-    player_base = df_newest[['AllyCode', 'Name']].drop_duplicates().copy()
-    
-    # Spieler alphabetisch sortieren für konsistente Reihenfolge
-    player_base = player_base.sort_values('Name').reset_index(drop=True)
-    
-    return available_dates, newest_date, player_base
 
 @st.cache_data
 def get_all_relic_counts_per_date(df_guild, player_base):
@@ -776,14 +884,10 @@ def calculate_player_relic_overview(df_guild, player_base, relic_levels, compare
     """
     # SKIP wenn nur Styling-Änderung (Checkbox geklickt)
     if not st.session_state.get('recalculate', True):
-        print(f"[CALCULATE RELIC:] SKIPPED - recalculate=False", file=sys.stderr)
         # Hole gecachtes Ergebnis aus Session State
         if 'player_overview_relics' in st.session_state:
             # Dummy return - wird nicht verwendet, da player_overview bereits in Session State
             return st.session_state.player_overview_relics, [], []
-    
-    print(f"[CALCULATE RELIC:] len(player_base) = {len(player_base)}", file=sys.stderr)
-    print(f"[CALCULATE RELIC END] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
     
     # Hole gecachte Counts (nur einmal pro Guild berechnet!)
     counts_per_date = get_all_relic_counts_per_date(df_guild, player_base)
@@ -897,12 +1001,8 @@ def calculate_player_omicron_overview(df_guild, player_base, omicron_columns, co
     """
     # SKIP wenn nur Styling-Änderung (Checkbox geklickt)
     if not st.session_state.get('recalculate', True):
-        print(f"[CALCULATE OMIS:] SKIPPED - recalculate=False", file=sys.stderr)
         if 'player_overview_omicrons' in st.session_state:
             return st.session_state.player_overview_omicrons, [], []
-    
-    print(f"[CALCULATE OMIS:] len(player_base) = {len(player_base)}", file=sys.stderr)
-    print(f"[CALCULATE OMIS END] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
     
     # Hole gecachte Counts
     counts_per_date = get_all_omicron_counts_per_date(df_guild, player_base)
@@ -962,9 +1062,6 @@ def get_all_speed_mod_counts_per_date(df_guild, player_base):
     Returns:
         Dict[date, DataFrame]: {date: DataFrame mit [AllyCode, Name, Speed10, Speed15, Speed20, Speed25]}
     """
-
-    print(f"[get mods:] len(player_base) = {len(player_base)}", file=sys.stderr)
-    
     available_dates = sorted(df_guild['date'].unique(), reverse=True)
     speed_cols = ['Speed10', 'Speed15', 'Speed20', 'Speed25']
     
@@ -1017,12 +1114,8 @@ def calculate_player_speed_mod_overview(df_guild, player_base, speed_columns, co
     """
     # SKIP wenn nur Styling-Änderung (Checkbox geklickt)
     if not st.session_state.get('recalculate', True):
-        print(f"[CALCULATE MODS:] SKIPPED - recalculate=False", file=sys.stderr)
         if 'player_overview_speed_mods' in st.session_state:
             return st.session_state.player_overview_speed_mods, [], []
-    
-    print(f"[CALCULATE MODS:] len(player_base) = {len(player_base)}", file=sys.stderr)
-    print(f"[CALCULATE MODS END] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
     
     # Hole gecachte Counts
     counts_per_date = get_all_speed_mod_counts_per_date(df_guild, player_base)
@@ -1069,7 +1162,7 @@ def calculate_player_speed_mod_overview(df_guild, player_base, speed_columns, co
     
     return player_overview, date_columns, available_dates
 
-def show_player_overview_tab(df_all, guild_filter, selected_player, compare_date):
+def show_player_overview_tab(df_guild, compare_date):
     """Tab 3 - Player Relics mit Relic-Vergleich und Row-Selection."""
     
     # Hole player_base DIREKT aus Session State (nicht als Parameter!)
@@ -1083,7 +1176,7 @@ def show_player_overview_tab(df_all, guild_filter, selected_player, compare_date
     with st.container(width=750):
         col1, col2 = st.columns([3, 3])
         with col1:
-            st.subheader("🏆 Player Relics")
+            st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🔟 Player Relics</h3>', unsafe_allow_html=True)
         with col2:
             # Relic Level Segmented Control - iOS-style button group
             relic_options = ['R10', 'R9', 'R8', 'R7', 'R6']
@@ -1107,8 +1200,7 @@ def show_player_overview_tab(df_all, guild_filter, selected_player, compare_date
         st.warning("⚠️ Bitte mindestens ein Relic-Level auswählen.")
         return
     
-    # Berechne player_overview
-    df_guild = get_guild_filtered_data(df_all, guild_filter)
+    # Berechne player_overview (df_guild ist bereits gefiltert!)
     player_base_minimal = player_base[['AllyCode', 'Name']].copy()
     player_overview, date_columns, available_dates = calculate_player_relic_overview(
         df_guild, player_base_minimal, relic_levels, compare_date
@@ -1175,20 +1267,34 @@ def show_player_overview_tab(df_all, guild_filter, selected_player, compare_date
     for col in date_columns:
         column_config[col] = st.column_config.NumberColumn(col, format='%d', width=120)
     
-    # on_select Callback für Row-Selection
+    # on_select Callback für Cell-Selection
     def on_relics_select():
-        """Callback wenn Spieler ausgewählt/abgewählt wird - toggle nur die geklickten Rows."""
-        print(f"\n[RELICS ON_SELECT] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
-        
+        """Callback wenn Spieler-Zelle ausgewählt wird - toggle den Spieler der Zeile."""
         # Hole Selection-Event
         selection = st.session_state.player_relics_table_selection
-        selected_rows = selection.get('selection', {}).get('rows', [])
         
-        print(f"[RELICS] Selected rows: {selected_rows}", file=sys.stderr)
+        # Zugriff auf selection dict
+        if hasattr(selection, 'selection'):
+            sel_dict = selection.selection
+        elif isinstance(selection, dict):
+            sel_dict = selection.get('selection', {})
+        else:
+            return
         
-        # Toggle nur die selected rows (User-Click = Toggle!)
-        for row_idx in selected_rows:
+        selected_cells = sel_dict.get('cells', [])
+        
+        # Extrahiere Zeilen-Index: (row_idx, column_name)
+        if selected_cells:
+            cell = selected_cells[0]
+            if isinstance(cell, (list, tuple)) and len(cell) >= 1:
+                row_idx = cell[0]
+            elif isinstance(cell, dict):
+                row_idx = cell.get('row', 0)
+            else:
+                return
+            
             player_name = player_overview.iloc[row_idx]['Name']
+            
             if player_name in st.session_state.player_base_global['Name'].values:
                 # Toggle: checked → unchecked, unchecked → checked
                 current_state = st.session_state.player_base_global.loc[
@@ -1200,24 +1306,22 @@ def show_player_overview_tab(df_all, guild_filter, selected_player, compare_date
                     st.session_state.player_base_global['Name'] == player_name, 
                     'Checked'
                 ] = not current_state
-        
-        print(f"[RELICS ON_SELECT END] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
     
     # Tabelle mit on_select
     st.dataframe(
         styled_df,
         hide_index=True,
         width="content",
-        height=1140,
-        row_height=22,
+        height=1100,
+        row_height=21,
         column_config=column_config,
-        selection_mode="single-row",
+        selection_mode="single-cell",
         on_select=on_relics_select,
         key="player_relics_table_selection"
     )
 
 
-def show_player_omicrons_tab(df_all, guild_filter, selected_player, compare_date):
+def show_player_omicrons_tab(df_guild, compare_date):
     """Tab 4 - Player Omicrons mit Omicron-Vergleich und Row-Selection."""
     
     # Hole player_base DIREKT aus Session State (nicht als Parameter!)
@@ -1231,7 +1335,7 @@ def show_player_omicrons_tab(df_all, guild_filter, selected_player, compare_date
     with st.container(width=750):
         col1, col2 = st.columns([3, 3])
         with col1:
-            st.subheader("🏆 Player Omicrons")
+            st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🏐 Player Omicrons</h3>', unsafe_allow_html=True)
         with col2:
             # Omicron Type Segmented Control - iOS-style button group
             omicron_options = {
@@ -1260,8 +1364,7 @@ def show_player_omicrons_tab(df_all, guild_filter, selected_player, compare_date
         st.warning("⚠️ Bitte mindestens einen Omicron-Type auswählen.")
         return
     
-    # Berechne player_overview
-    df_guild = get_guild_filtered_data(df_all, guild_filter)
+    # Berechne player_overview (df_guild ist bereits gefiltert!)
     player_base_minimal = player_base[['AllyCode', 'Name']].copy()
     player_overview, date_columns, available_dates = calculate_player_omicron_overview(
         df_guild, player_base_minimal, omicron_columns, compare_date
@@ -1328,20 +1431,34 @@ def show_player_omicrons_tab(df_all, guild_filter, selected_player, compare_date
     for col in date_columns:
         column_config[col] = st.column_config.NumberColumn(col, format='%d', width=120)
     
-    # on_select Callback für Row-Selection
+    # on_select Callback für Cell-Selection
     def on_omicrons_select():
-        """Callback wenn Spieler ausgewählt/abgewählt wird - toggle nur die geklickten Rows."""
-        print(f"\n[OMICRONS ON_SELECT] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
-        
+        """Callback wenn Spieler-Zelle ausgewählt wird - toggle den Spieler der Zeile."""
         # Hole Selection-Event
         selection = st.session_state.player_omicrons_table_selection
-        selected_rows = selection.get('selection', {}).get('rows', [])
         
-        print(f"[OMICRONS] Selected rows: {selected_rows}", file=sys.stderr)
+        # Zugriff auf selection dict
+        if hasattr(selection, 'selection'):
+            sel_dict = selection.selection
+        elif isinstance(selection, dict):
+            sel_dict = selection.get('selection', {})
+        else:
+            return
         
-        # Toggle nur die selected rows (User-Click = Toggle!)
-        for row_idx in selected_rows:
+        selected_cells = sel_dict.get('cells', [])
+        
+        # Extrahiere Zeilen-Index: (row_idx, column_name)
+        if selected_cells:
+            cell = selected_cells[0]
+            if isinstance(cell, (list, tuple)) and len(cell) >= 1:
+                row_idx = cell[0]
+            elif isinstance(cell, dict):
+                row_idx = cell.get('row', 0)
+            else:
+                return
+            
             player_name = player_overview.iloc[row_idx]['Name']
+            
             if player_name in st.session_state.player_base_global['Name'].values:
                 # Toggle: checked → unchecked, unchecked → checked
                 current_state = st.session_state.player_base_global.loc[
@@ -1353,24 +1470,22 @@ def show_player_omicrons_tab(df_all, guild_filter, selected_player, compare_date
                     st.session_state.player_base_global['Name'] == player_name, 
                     'Checked'
                 ] = not current_state
-        
-        print(f"[OMICRONS ON_SELECT END] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
     
     # Tabelle mit on_select
     st.dataframe(
         styled_df,
         hide_index=True,
         width="content",
-        height=1140,
-        row_height=22,
+        height=1100,
+        row_height=21,
         column_config=column_config,
-        selection_mode="single-row",
+        selection_mode="single-cell",
         on_select=on_omicrons_select,
         key="player_omicrons_table_selection"
     )
 
 
-def show_player_speed_mods_tab(df_all, guild_filter, selected_player, compare_date):
+def show_player_speed_mods_tab(df_guild, compare_date):
     """Tab 5 - Player Speed Mods mit Speed-Vergleich und Row-Selection."""
     
     # Hole player_base DIREKT aus Session State (nicht als Parameter!)
@@ -1384,7 +1499,7 @@ def show_player_speed_mods_tab(df_all, guild_filter, selected_player, compare_da
     with st.container(width=750):
         col1, col2 = st.columns([3, 3])
         with col1:
-            st.subheader("⚡ Player Speed Mods")
+            st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🎲 Player Speed Mods</h3>', unsafe_allow_html=True)
         with col2:
             # Speed Threshold Segmented Control - iOS-style button group
             speed_options = {
@@ -1413,8 +1528,7 @@ def show_player_speed_mods_tab(df_all, guild_filter, selected_player, compare_da
         st.warning("⚠️ Bitte mindestens einen Speed-Threshold auswählen.")
         return
     
-    # Berechne player_overview
-    df_guild = get_guild_filtered_data(df_all, guild_filter)
+    # Berechne player_overview (df_guild ist bereits gefiltert!)
     player_base_minimal = player_base[['AllyCode', 'Name']].copy()
     player_overview, date_columns, available_dates = calculate_player_speed_mod_overview(
         df_guild, player_base_minimal, speed_columns, compare_date
@@ -1480,32 +1594,35 @@ def show_player_speed_mods_tab(df_all, guild_filter, selected_player, compare_da
     # Datums-Spalten als Zahlen
     for col in date_columns:
         column_config[col] = st.column_config.NumberColumn(col, format='%d', width=120)
-    
-    # on_select Callback für Row-Selection
+       
+    # on_select Callback für Cell-Selection
     def on_speed_mods_select():
-        """Callback wenn Spieler ausgewählt/abgewählt wird."""
-        print(f"\n[SPEED MODS ON_SELECT] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
-        
+        """Callback wenn Spieler-Zelle ausgewählt wird - toggle den Spieler der Zeile."""
         # Hole Selection-Event
         selection = st.session_state.player_speed_mods_table_selection
-        selected_rows = selection.get('selection', {}).get('rows', [])
         
-        print(f"[SPEED MODS] Selected rows: {selected_rows}", file=sys.stderr)
+        # Zugriff auf selection dict
+        if hasattr(selection, 'selection'):
+            sel_dict = selection.selection
+        elif isinstance(selection, dict):
+            sel_dict = selection.get('selection', {})
+        else:
+            return
         
-    # on_select Callback für Row-Selection
-    def on_speed_mods_select():
-        """Callback wenn Spieler ausgewählt/abgewählt wird - toggle nur die geklickten Rows."""
-        print(f"\n[SPEED MODS ON_SELECT] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
+        selected_cells = sel_dict.get('cells', [])
         
-        # Hole Selection-Event
-        selection = st.session_state.player_speed_mods_table_selection
-        selected_rows = selection.get('selection', {}).get('rows', [])
-        
-        print(f"[SPEED MODS] Selected rows: {selected_rows}", file=sys.stderr)
-        
-        # Toggle nur die selected rows (User-Click = Toggle!)
-        for row_idx in selected_rows:
+        # Extrahiere Zeilen-Index: (row_idx, column_name)
+        if selected_cells:
+            cell = selected_cells[0]
+            if isinstance(cell, (list, tuple)) and len(cell) >= 1:
+                row_idx = cell[0]
+            elif isinstance(cell, dict):
+                row_idx = cell.get('row', 0)
+            else:
+                return
+            
             player_name = player_overview.iloc[row_idx]['Name']
+            
             if player_name in st.session_state.player_base_global['Name'].values:
                 # Toggle: checked → unchecked, unchecked → checked
                 current_state = st.session_state.player_base_global.loc[
@@ -1517,18 +1634,16 @@ def show_player_speed_mods_tab(df_all, guild_filter, selected_player, compare_da
                     st.session_state.player_base_global['Name'] == player_name, 
                     'Checked'
                 ] = not current_state
-        
-        print(f"[SPEED MODS ON_SELECT END] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
     
     # Tabelle mit on_select
     st.dataframe(
         styled_df,
         hide_index=True,
         width="content",
-        height=1140,
-        row_height=22,
+        height=1100,
+        row_height=21,
         column_config=column_config,
-        selection_mode="single-row",
+        selection_mode="single-cell",
         on_select=on_speed_mods_select,
         key="player_speed_mods_table_selection"
     )
@@ -1539,7 +1654,7 @@ def show_settings_tab(df):
     st.header("⚙️ Settings")
     
     # UI Settings
-    st.subheader("🎨 UI Einstellungen")
+    st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🎨 UI Einstellungen</h3>', unsafe_allow_html=True)
     
     # Toggle für Streamlit Header (Deploy-Button, Clear Cache)
     if 'show_header' not in st.session_state:
@@ -1557,68 +1672,13 @@ def show_settings_tab(df):
     
     st.divider()
     
-    st.subheader("📥 Update Character Data")
-    
-    # Zeige aktuelles Datum der characters.json
-    characters_file = 'data/characters.json'
-    if os.path.exists(characters_file):
-        mod_time = os.path.getmtime(characters_file)
-        mod_date = datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M:%S')
-        st.info(f"**Aktuelle Version:** {mod_date}")
-    else:
-        st.warning("⚠️ characters.json nicht gefunden!")
-    
-    st.markdown("""
-    **So aktualisierst du die Charakterdaten:**
-    1. Öffne im Browser: [https://swgoh.gg/api/characters/](https://swgoh.gg/api/characters/)
-    2. Rechtsklick → "Seite speichern unter" → als `characters.json` speichern
-    3. Datei unten hochladen
-    
-    **Wann nutzen?**
-    - Nach Release neuer Characters
-    - Einmal pro Monat zur Sicherheit
-    - Wenn neue Categories/Rollen hinzugefügt wurden
-    """)
-    
-    # File Upload
-    uploaded_file = st.file_uploader(
-        "� characters.json hochladen", 
-        type=['json'],
-        help="Lade die von swgoh.gg heruntergeladene JSON-Datei hoch"
-    )
-    
-    if uploaded_file is not None:
-        try:
-            # Parse JSON
-            characters = json.load(uploaded_file)
-            
-            # Validierung: Prüfe ob es ein Array ist und erste Einträge sinnvoll aussehen
-            if isinstance(characters, list) and len(characters) > 0:
-                if 'base_id' in characters[0] and 'name' in characters[0]:
-                    # Speichere in data/characters.json
-                    with open(characters_file, 'w', encoding='utf-8') as f:
-                        json.dump(characters, f, indent=2, ensure_ascii=False)
-                    
-                    st.success(f"✅ {len(characters)} Characters erfolgreich aktualisiert!")
-                    st.info("💡 **Bitte App neu laden** (F5) um die neuen Daten zu sehen.")
-                else:
-                    st.error("❌ Datei scheint keine gültige characters.json zu sein (fehlende Felder)!")
-            else:
-                st.error("❌ Datei scheint keine gültige characters.json zu sein!")
-                
-        except json.JSONDecodeError:
-            st.error("❌ Fehler beim Parsen der JSON-Datei!")
-        except Exception as e:
-            st.error(f"❌ Fehler beim Verarbeiten: {e}")
-    
-    st.divider()
-    
     # Info-Bereich
-    st.subheader("ℹ️ App Information")
+    st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">ℹ️ App Information</h3>', unsafe_allow_html=True)
     st.markdown(f"""
     - **Geladene CSVs:** {len(df['date'].unique())} Datenabzüge
     - **Verfügbare Daten:** {', '.join(sorted(df['date'].unique(), reverse=True))}
     - **Gesamt-Einträge:** {len(df):,} Zeilen
+    - **Memory:** {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
     - **Spieler (neueste CSV):** {df[df['date'] == df['date'].max()]['AllyCode'].nunique()}
     """)
 
@@ -1648,12 +1708,12 @@ def main():
         {header_css}
         /* Reduziert Abstände über Filter und Tabs */
         .block-container {{
-            padding-top: 1rem;
-            padding-bottom: 1rem;
+            padding-top: 3rem;
+            padding-bottom: 0rem;
         }}
         /* Fix für collapsed label bei segmented_control */
         div[data-testid="stSegmentedControl"] {{
-            margin-top: 1rem;
+            margin-top: 2rem;
         }}
         /* Sidebar kompakter und breiter */
         section[data-testid="stSidebar"] > div {{
@@ -1661,8 +1721,8 @@ def main():
         }}
         /* Sidebar-Breite erhöhen (pills nebeneinander) */
         section[data-testid="stSidebar"] {{
-            width: 390px !important;
-            min-width: 390px !important;
+            width: 380px !important;
+            min-width: 380px !important;
         }}
         </style>
     """, unsafe_allow_html=True)
@@ -1677,37 +1737,44 @@ def main():
     # Lade Daten basierend auf Auswahl
     guild_filter = st.session_state.selected_guild
     selected_dates = st.session_state.selected_dates
+
+    # Zeige ausgewählte Guild und Dates
+    has_upload = 'uploaded_csv_df' in st.session_state
+    data_info = f"{len(selected_dates)} CSV(s)" + (" + 1 Upload" if has_upload else "")
+    st.sidebar.info(f"**Gilde:** {guild_filter}\n\n**Daten:** {data_info}")
     
-    print(f"\n[Start data loading] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
-    df = get_final_df(guild_filter, selected_dates)
-    print(f"\n[Stop data loading] {datetime.now().strftime('%H:%M:%S.%f')}", file=sys.stderr)
+    # Bereite Upload-Daten für Cache vor (falls vorhanden)
+    upload_csv_data = None
+    upload_date = None
+    upload_guild = None
+    if has_upload:
+        # Nutze bereits gespeicherten CSV-String (wurde beim Upload erstellt!)
+        upload_csv_data = st.session_state.get('uploaded_csv_data', None)
+        upload_date = st.session_state.get('uploaded_csv_date', datetime.now().strftime('%Y-%m-%d'))
+        upload_guild = st.session_state.get('uploaded_csv_guild', None)
     
-    if df is None:
+    # Lade Daten (GECACHT - Upload wird im Cache gespeichert!)
+    df = get_final_df(guild_filter, tuple(selected_dates), upload_csv_data, upload_date, upload_guild)
+
+    if df is None or df.empty:
         st.error("❌ Fehler beim Laden der Daten!")
+        if df is not None and df.empty:
+            st.error("🚫 Zugriff verweigert: Diese Gilde ist nicht im Repository!")
+            st.info("💡 Nur Gilden aus dem BΛ Bataillon dürfen das Tool nutzen.")
         if st.button("↩️ Zurück zur Auswahl"):
+            # Upload bleibt erhalten - nur analysis_started zurücksetzen
             del st.session_state['analysis_started']
             st.rerun()
         return
     
-    print(f"Shape: {df.shape}", file=sys.stderr)
-    print(f"Memory: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB", file=sys.stderr)
-    
-    # Seitenleiste für Filter
-    st.sidebar.subheader("🎛️ Filter")
-    
-    # Zeige ausgewählte Guild und Dates
-    st.sidebar.info(f"**Gilde:** {guild_filter}\n\n**Daten:** {len(selected_dates)} CSV(s)")
-    
     # Button um zurück zur Auswahl zu gehen
     if st.sidebar.button("↩️ Neue Auswahl"):
-        # Clear session state
+        # Clear NUR analysis_started - Upload bleibt erhalten!
         del st.session_state['analysis_started']
-        if 'uploaded_csv_df' in st.session_state:
-            del st.session_state['uploaded_csv_df']
         st.rerun()
-    
-    st.sidebar.divider()
-    
+        
+    # Seitenleiste für Filter
+        
     # Verfügbare Daten aus geladenen CSVs
     available_dates = sorted(df['date'].unique(), reverse=True)
     date_filter = available_dates[0]  # Neuestes Datum
@@ -1781,9 +1848,6 @@ def main():
     
     # Alle verfügbaren Optionen sammeln (nur aus den im DataFrame vorhandenen Units)
     all_alignments = sorted(list({char.get('alignment', '') for char in characters_data_filtered if char.get('alignment')}))
-    all_categories = sorted(list({cat for char in characters_data_filtered for cat in char.get('categories', [])}))
-    all_roles = sorted(list({char.get('role', '') for char in characters_data_filtered if char.get('role')}))
-    all_ability_classes = sorted(list({ac for char in characters_data_filtered for ac in char.get('ability_classes', [])}))
     
     # Gesinnung Filter (Segmented Control)
     alignment_filter = st.sidebar.segmented_control(
@@ -1808,7 +1872,15 @@ def main():
     
     # Verfügbare Rollen basierend auf vorherigen Filtern (vor Kategorie berechnen)
     filtered_chars_for_roles = filtered_chars_for_categories
-    available_roles = sorted(list({char.get('role', '') for char in filtered_chars_for_roles if char.get('role')}))
+    roles_set = set()
+    for char in filtered_chars_for_roles:
+        role = char.get('role')
+        if role and role.strip():
+            if role != 'Unknown':  # "Unknown" wird nicht angezeigt
+                roles_set.add(role)
+        else:  # Keine Rolle vorhanden
+            roles_set.add('?')
+    available_roles = sorted(list(roles_set))
     
     # Rolle Filter (Segmented Control) - jetzt vor Kategorie
     role_filter = st.sidebar.segmented_control(
@@ -1883,34 +1955,7 @@ def main():
     # Prüfe ob irgendwelche Filter aktiv sind
     filters_active = bool(alignment_filter or categories_filter or role_filter or ability_classes_filter)
     
-    # Player-Filter (ganz unten in der Sidebar)
     st.sidebar.markdown("---")  # Trennlinie
-    st.sidebar.markdown("**👤 Player Filter:**")
-    
-    # Alle verfügbaren Spielernamen aus dem gefilterten DataFrame
-    available_players = sorted(df_filtered['Name'].unique())
-    
-    # Player-Auswahl mit Session State
-    if available_players:
-        # Standard: DEFAULT_PLAYER falls verfügbar, sonst erster Spieler
-        if 'selected_player' not in st.session_state or st.session_state.selected_player not in available_players:
-            # Versuche DEFAULT_PLAYER zu setzen, falls in Liste
-            if DEFAULT_PLAYER in available_players:
-                st.session_state.selected_player = DEFAULT_PLAYER
-            else:
-                st.session_state.selected_player = available_players[0]
-        
-        selected_player = st.sidebar.selectbox(
-            "Spieler hervorheben:",
-            available_players,
-            index=available_players.index(st.session_state.selected_player) if st.session_state.selected_player in available_players else 0,
-            key="player_select"
-        )
-        
-        # Session State aktualisieren
-        st.session_state.selected_player = selected_player
-    else:
-        selected_player = None
     
     # Character-Filter für Tab 2
     st.sidebar.markdown("**☯ Character Auswahl:**")
@@ -1939,6 +1984,13 @@ def main():
             if st.session_state.selected_character_tab2 != selected_character_tab2:
                 st.session_state.selected_character_tab2 = selected_character_tab2
     
+    # Player Uncheck Button am Ende der Sidebar
+    st.sidebar.markdown("---")
+    if st.sidebar.button("❌ Uncheck All", key="uncheck_all_btn", use_container_width=True):
+        if 'player_base_global' in st.session_state:
+            st.session_state.player_base_global['Checked'] = False
+            st.rerun()
+    
     # GLOBALES PLAYER_BASE in Session State - EINMALIG initialisieren!
     # Dies ist die zentrale Datenstruktur für ALLE Player-Tabs
     if 'player_base_global' not in st.session_state or st.session_state.get('current_guild') != guild_filter:
@@ -1957,8 +2009,8 @@ def main():
         player_base['Checked'] = False  # Default: niemand gecheckt
         
         # DEFAULT_PLAYER automatisch checken
-        if selected_player in player_base['Name'].values:
-            player_base.loc[player_base['Name'] == selected_player, 'Checked'] = True
+        if DEFAULT_PLAYER in player_base['Name'].values:
+            player_base.loc[player_base['Name'] == DEFAULT_PLAYER, 'Checked'] = True
         
         # Speichere in Session State
         st.session_state.player_base_global = player_base
@@ -1969,32 +2021,32 @@ def main():
     
     # Tab-Navigation mit Segmented Control - NUR aktiver Tab wird gerendert!
     if 'active_tab' not in st.session_state:
-        st.session_state.active_tab = "📊 Character Overview"
-    
+        st.session_state.active_tab = "📋 Character Overview"
+        
     selected_tab = st.segmented_control(
         "Navigation",
-        options=["📊 Character Overview", "📈 Character Stats", "🔟 Player Relics", 
+        options=["📋 Character Overview", "📊 Character Stats", "🔟 Player Relics", 
                  "🏐 Player Omicrons", "🎲 Player Speed Mods", "⚙️ Settings"],
-        default=st.session_state.active_tab,
-        key="main_navigation",
-        selection_mode="single",
-        label_visibility="collapsed"
-    )
+            default=st.session_state.active_tab,
+            key="main_navigation",
+            selection_mode="single",
+            label_visibility="collapsed"
+        )
     
     # Update active tab
     st.session_state.active_tab = selected_tab
     
     # CONDITIONAL RENDERING - nur aktiver Tab wird ausgeführt!
-    if selected_tab == "📊 Character Overview":
+    if selected_tab == "📋 Character Overview":
         show_character_overview(df_filtered, filtered_characters, characters_data, filters_active)
-    elif selected_tab == "📈 Character Stats":
-        show_analytics_tab(df_filtered, filtered_characters, characters_data, filters_active, selected_player)
+    elif selected_tab == "📊 Character Stats":
+        show_analytics_tab(df_filtered, filtered_characters, characters_data, filters_active)
     elif selected_tab == "🔟 Player Relics":
-        show_player_overview_tab(df, guild_filter, selected_player, compare_date)
+        show_player_overview_tab(df, compare_date)
     elif selected_tab == "🏐 Player Omicrons":
-        show_player_omicrons_tab(df, guild_filter, selected_player, compare_date)
+        show_player_omicrons_tab(df, compare_date)
     elif selected_tab == "🎲 Player Speed Mods":
-        show_player_speed_mods_tab(df, guild_filter, selected_player, compare_date)
+        show_player_speed_mods_tab(df, compare_date)
     elif selected_tab == "⚙️ Settings":
         show_settings_tab(df)
 
