@@ -245,7 +245,7 @@ def show_start_screen():
     # Header mit Logo und Titel nebeneinander
     col1, col2 = st.columns([1, 3])
     with col1:
-        st.image("assets/bataillon_logo.png", width=400)
+        st.image("assets/bataillon_logo.png", width=600)
     with col2:
         st.title("SWGOH Guild Progress")
     
@@ -1658,7 +1658,7 @@ def show_settings_tab(df):
     
     # Toggle für Streamlit Header (Deploy-Button, Clear Cache)
     if 'show_header' not in st.session_state:
-        st.session_state.show_header = False
+        st.session_state.show_header = True
     
     show_header = st.toggle(
         "Streamlit Menü anzeigen (Deploy, Clear Cache)",
@@ -1694,7 +1694,7 @@ def main():
     # CSS für kompakteres Layout
     # Header-Visibility dynamisch basierend auf Settings
     if 'show_header' not in st.session_state:
-        st.session_state.show_header = False
+        st.session_state.show_header = True
     
     header_css = "" if st.session_state.show_header else """
         /* Versteckt Streamlit Header komplett */
