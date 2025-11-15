@@ -1,12 +1,12 @@
 [theme]
-# Dark Mode als Standard
+# Dark Mode als Standard (lässt sich in Settings ändern)
 base = "dark"
 
-# Optional: Eigene Farben (Star Wars Theme)
-primaryColor = "#FFE81F"  # Star Wars Gelb
-backgroundColor = "#0E1117"
-secondaryBackgroundColor = "#262730"
-textColor = "#FAFAFA"
+# Optional: Eigene Farben
+# primaryColor = "#FFE81F"  # Star Wars Gelb
+# backgroundColor = "#0E1117"
+# secondaryBackgroundColor = "#262730"
+# textColor = "#FAFAFA"
 
 [server]
 # Verhindert CORS Probleme
