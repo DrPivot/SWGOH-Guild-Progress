@@ -42,7 +42,7 @@ desktop.ini
 *_backup.py
 *.bak
 
-# Temporary character analysis files
+# Temporary files
 temp_data/
 streamlit-logs/
 get_character_csv.py
