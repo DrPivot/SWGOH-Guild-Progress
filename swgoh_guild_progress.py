@@ -571,6 +571,13 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
     
     st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">📊 Character Stats für {selected_character_name}</h3>', unsafe_allow_html=True)
     
+    # Hole Character-Image aus characters_data
+    character_image_url = None
+    for char in characters_data:
+        if char.get('base_id') == selected_base_id:
+            character_image_url = char.get('image', '')
+            break
+    
     # Alle Stats aus der Tabelle für Diagramme (CritChance vor CritDamage)
     stats_columns = ['Speed', 'Health', 'Protection', 'Armor', 'Damage', 'CritChance', 'CritDamage', 'Potency', 'Tenacity', 'RelicLevel']
     
@@ -600,7 +607,14 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
         }
                 
         with chart_cols[0]:
-            st.markdown("")  # Spacer für Player-Spalte
+            # Character-Bild horizontal zentriert anzeigen (150px Höhe wie Charts)
+            if character_image_url:
+                st.markdown(
+                    f'<div style="display: flex; justify-content: center; align-items: center; height: 150px; background: #1A1C24; border-radius: 8px;">'
+                    f'<img src="{character_image_url}" style="height: 150px; width: auto; border-radius: 8px;">'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
         
         for i, stat in enumerate(stats_columns):
             # Emoji für jeden Stat
@@ -621,7 +635,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
             stat_data = df_character[['Name', 'AllyCode', stat]].sort_values(stat, ascending=False)
             
             # Farben für Balken: Vektorisierte Operation (blitzschnell!)
-            colors = stat_data['Name'].map(lambda name: player_colors_rgba.get(name, "#222222")).tolist()
+            colors = stat_data['Name'].map(lambda name: player_colors_rgba.get(name, "#1A1C24")).tolist()
             
             # Hover-Text erstellen: Name + Wert
             hover_texts = [
@@ -668,8 +682,8 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
                     'automargin': False  # Verhindert automatische Margins für y-Achse
                 },
                 width=150,  # Chart-Breite: 152px
-                height=150,  # Kompakte Höhe
-                margin={'l': 2, 'r': 4, 't': 24, 'b': 1},  # Minimale Margins
+                height=180,  # Kompakte Höhe (+30, da plotly unten Platz reserviert)
+                margin={'l': 2, 'r': 4, 't': 24, 'b': 0},  # Minimale Margins
                 bargap=0,  # Kein Abstand zwischen Balken
                 plot_bgcolor='rgba(0,0,0,0)',  # Transparenter Hintergrund
                 paper_bgcolor='rgba(0,0,0,0)',  # Transparenter Hintergrund
@@ -701,8 +715,14 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
             with chart_cols[i + 1]:  # Index +1 wegen nur Player Spalte (keine Checkbox mehr!)
                 st.plotly_chart(fig, use_container_width=False, config={'displayModeBar': False}, key=f"chart_{stat}")
     
-    # Tabelle direkt unter den Diagrammen (ohne große Lücke)
-    # st.markdown("")  # Minimaler Abstand
+    # Reduziere Abstand zur Tabelle
+    st.markdown("""
+        <style>
+        [data-testid="stDataFrame"] {
+            margin-top: -40px !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
     # Spalten für die Anzeige auswählen (ohne BaseId) - CritChance vor CritDamage
     display_columns = ['Name', 'Speed', 'Health', 'Protection', 'Armor', 'Damage', 'CritChance', 'CritDamage', 'Potency', 'Tenacity', 'RelicLevel']
@@ -812,7 +832,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
         hide_index=True,
         width=1810,
         column_config=column_config,
-        height=960,
+        height=920,
         row_height=20,
         selection_mode="single-cell",
         on_select=on_player_select,
