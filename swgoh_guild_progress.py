@@ -713,7 +713,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
             )
             
             with chart_cols[i + 1]:  # Index +1 wegen nur Player Spalte (keine Checkbox mehr!)
-                st.plotly_chart(fig, use_container_width=False, config={'displayModeBar': False}, key=f"chart_{stat}")
+                st.plotly_chart(fig, width='content', config={'displayModeBar': False}, key=f"chart_{stat}")
     
     # Reduziere Abstand zur Tabelle
     st.markdown("""
@@ -2008,7 +2008,7 @@ def main():
     
     # Player Uncheck Button am Ende der Sidebar
     st.sidebar.markdown("---")
-    if st.sidebar.button("❌ Uncheck All", key="uncheck_all_btn", use_container_width=True):
+    if st.sidebar.button("❌ Uncheck All", key="uncheck_all_btn", width='stretch'):
         if 'player_base_global' in st.session_state:
             st.session_state.player_base_global['Checked'] = False
             st.rerun()
