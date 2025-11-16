@@ -784,7 +784,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
                 column_config[col] = st.column_config.NumberColumn(width=160, format="%.1f %%")
             elif col in ['Health', 'Protection']:
                 # Health und Protection mit Tausender-Trenner (localized)
-                column_config[col] = st.column_config.NumberColumn(width=160, format="%d")
+                column_config[col] = st.column_config.NumberColumn(width=160, format="localized")
             else:
                 # Normale Zahlen (Speed, etc.)
                 column_config[col] = st.column_config.NumberColumn(width=160, format="%.0f")
