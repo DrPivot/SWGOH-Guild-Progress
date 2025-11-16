@@ -47,6 +47,9 @@ temp_data/
 get_character_csv.py
 data/character_relevance_template.csv
 
+# Other source files
+data/units.json
+
 # Documentation files for future features
 Weiterentwicklung.md
 
