@@ -527,9 +527,18 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
     # Index zurücksetzen um BaseId zu entfernen
     char_overview = char_overview.reset_index(drop=True)
     
+    # Spalten-Konfiguration für Avg-Spalten mit lokalisierter Formatierung
+    column_config = {
+        'Avg Speed': st.column_config.NumberColumn(format="localized"),
+        'Avg Health': st.column_config.NumberColumn(format="localized"),
+        'Avg Protection': st.column_config.NumberColumn(format="localized"),
+        'Avg Damage': st.column_config.NumberColumn(format="localized"),
+        'Avg SpecialDamage': st.column_config.NumberColumn(format="localized")
+    }
+    
     # Tabelle anzeigen mit kleiner Zeilenhöhe für mehr sichtbare Zeilen
     # row_height=21 ermöglicht ca. 50 Zeilen bei 1140px Container-Höhe
-    st.dataframe(char_overview, hide_index=True, width="stretch", height=1100, row_height=21)
+    st.dataframe(char_overview, hide_index=True, width="stretch", height=1100, row_height=21, column_config=column_config)
 
 def show_analytics_tab(df, filtered_characters, characters_data, filters_active):
     """Tab 2 - Character Stats mit Multi-Player Vergleich via Checkboxen."""
