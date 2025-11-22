@@ -4,7 +4,7 @@ Eine umfassende Analyseanwendung für Star Wars Galaxy of Heroes Gildendaten der
 
 Ermöglicht Multi-Player-Vergleiche über verschiedene Zeitpunkte hinweg basierend auf HotBots CSV-Exporten.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app-url.streamlit.app)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://swgoh-guild-progress.streamlit.app/)
 
 ## Features
 
