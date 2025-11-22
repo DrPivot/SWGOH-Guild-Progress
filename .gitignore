@@ -26,6 +26,9 @@ wheels/
 # Streamlit
 .streamlit/secrets.toml
 
+# CSV Input Folder (unverschlüsselte CSVs vor Encryption)
+hu_data/input/*.csv
+
 # IDE
 .vscode/
 .idea/

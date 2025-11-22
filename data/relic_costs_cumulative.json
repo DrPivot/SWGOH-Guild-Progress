@@ -145,7 +145,7 @@
   },
   "0_to_9": {
     "credits": 3510000,
-    "fragmented_signal_data": 165,
+    "fragmented_signal_data": 135,
     "incomplete_signal_data": 170,
     "flawed_signal_data": 175,
     "corrupted_signal_data": 0,
@@ -163,7 +163,7 @@
   },
   "0_to_10": {
     "credits": 5510000,
-    "fragmented_signal_data": 165,
+    "fragmented_signal_data": 135,
     "incomplete_signal_data": 195,
     "flawed_signal_data": 220,
     "corrupted_signal_data": 15,
