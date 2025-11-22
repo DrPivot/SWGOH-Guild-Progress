@@ -9,6 +9,13 @@ from datetime import datetime
 from io import StringIO
 import os
 
+# Encryption (optional - nur wenn verschlüsselte CSVs vorhanden)
+try:
+    from cryptography.fernet import Fernet
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    ENCRYPTION_AVAILABLE = False
+
 # ============================================================================
 # KONFIGURATION
 # ============================================================================
@@ -174,13 +181,21 @@ def calculate_total_relic_costs(char_overview, player_relic_dict, relic_rec_dict
 
 @st.cache_data
 def get_available_guilds():
-    """Scannt hu_data Ordner und gibt Liste aller Guilds zurück."""
-    pattern = "hu_data/*Full.csv"
-    files = glob.glob(pattern)
+    """Scannt hu_data Ordner und gibt Liste aller Guilds zurück (plain + encrypted CSVs)."""
+    pattern_plain = "hu_data/*Full.csv"
+    pattern_encrypted = "hu_data/*Full.csv.encrypted"
+    
+    files_plain = glob.glob(pattern_plain)
+    files_encrypted = glob.glob(pattern_encrypted)
+    
+    # Entferne .encrypted aus Plain-Liste (falls beide existieren)
+    files_plain = [f for f in files_plain if f"{f}.encrypted" not in files_encrypted]
+    
+    all_files = files_plain + files_encrypted
     
     guilds_info = {}
-    for file in files:
-        filename = os.path.basename(file)
+    for file in all_files:
+        filename = os.path.basename(file).replace('.encrypted', '')
         match = re.match(r'(\d{4}-\d{2}-\d{2})\s+(.+?)Full\.csv', filename)
         if match:
             guild_name = match.group(2).strip()
@@ -197,13 +212,21 @@ def get_available_guilds():
 
 @st.cache_data
 def get_dates_for_guild(guild_name):
-    """Gibt alle verfügbaren Daten für eine Guild zurück (nur Repository)."""
-    pattern = f"hu_data/*{guild_name}Full.csv"
-    files = glob.glob(pattern)
+    """Gibt alle verfügbaren Daten für eine Guild zurück (Repository - plain + encrypted)."""
+    pattern_plain = f"hu_data/*{guild_name}Full.csv"
+    pattern_encrypted = f"hu_data/*{guild_name}Full.csv.encrypted"
+    
+    files_plain = glob.glob(pattern_plain)
+    files_encrypted = glob.glob(pattern_encrypted)
+    
+    # Entferne .encrypted aus Plain-Liste (falls beide existieren)
+    files_plain = [f for f in files_plain if f"{f}.encrypted" not in files_encrypted]
+    
+    all_files = files_plain + files_encrypted
     
     dates_info = []
-    for file in files:
-        filename = os.path.basename(file)
+    for file in all_files:
+        filename = os.path.basename(file).replace('.encrypted', '')
         match = re.match(r'(\d{4}-\d{2}-\d{2})\s+.+?Full\.csv', filename)
         if match:
             date_str = match.group(1)
@@ -228,13 +251,31 @@ def get_dates_with_upload(guild_name, upload_date=None, upload_guild=None):
 
 @st.cache_data
 def load_guild_data(guild_filter, selected_dates):
-    """Lädt nur ausgewählte CSVs der Gilde (mit Caching)."""
+    """Lädt nur ausgewählte CSVs der Gilde (mit Caching). Unterstützt verschlüsselte .encrypted Dateien."""
     
-    # Suche nur nach CSVs dieser Guild
-    pattern = f"hu_data/*{guild_filter}Full.csv"
-    files = glob.glob(pattern)
+    # Initialisiere Cipher falls Encryption verfügbar
+    cipher = None
+    if ENCRYPTION_AVAILABLE:
+        try:
+            key = st.secrets.get("encryption", {}).get("key")
+            if key:
+                cipher = Fernet(key.encode())
+        except Exception:
+            pass  # Kein Key vorhanden = nur unverschlüsselte CSVs laden
     
-    if not files:
+    # Suche nach CSVs (verschlüsselt UND unverschlüsselt)
+    pattern_plain = f"hu_data/*{guild_filter}Full.csv"
+    pattern_encrypted = f"hu_data/*{guild_filter}Full.csv.encrypted"
+    
+    files_plain = glob.glob(pattern_plain)
+    files_encrypted = glob.glob(pattern_encrypted)
+    
+    # Entferne .encrypted aus Plain-Liste (falls beide existieren, bevorzuge encrypted)
+    files_plain = [f for f in files_plain if f"{f}.encrypted" not in files_encrypted]
+    
+    all_files = files_plain + files_encrypted
+    
+    if not all_files:
         st.error(f"❌ No CSV files found for {guild_filter}!")
         return None
     
@@ -242,10 +283,10 @@ def load_guild_data(guild_filter, selected_dates):
     # Convert selected_dates to set for faster lookup
     selected_dates_set = set(selected_dates) if selected_dates else set()
 
-    for file in files:
+    for file in all_files:
         try:
-            # Extrahiere Datum aus Dateinamen
-            filename = os.path.basename(file)
+            # Extrahiere Datum aus Dateinamen (ohne .encrypted)
+            filename = os.path.basename(file).replace('.encrypted', '')
             match = re.match(r'(\d{4}-\d{2}-\d{2})\s+.+?Full\.csv', filename)
             
             if match:
@@ -253,8 +294,20 @@ def load_guild_data(guild_filter, selected_dates):
                 
                 # Nur laden wenn in selected_dates (oder wenn keine Auswahl = alle laden)
                 if not selected_dates_set or date_str in selected_dates_set:
-                    # Lade CSV
-                    df = pd.read_csv(file)
+                    # Lade CSV (verschlüsselt oder plain)
+                    if file.endswith('.encrypted'):
+                        if not cipher:
+                            st.warning(f"⚠️ Skipped encrypted file (no key): {filename}")
+                            continue
+                        
+                        # Entschlüssele
+                        with open(file, 'rb') as f:
+                            encrypted_data = f.read()
+                        decrypted_data = cipher.decrypt(encrypted_data)
+                        df = pd.read_csv(StringIO(decrypted_data.decode('utf-8')))
+                    else:
+                        # Plain CSV
+                        df = pd.read_csv(file)
                     
                     # Füge Spalten hinzu
                     df['date'] = date_str

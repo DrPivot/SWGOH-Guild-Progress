@@ -2,3 +2,5 @@ streamlit
 pandas
 plotly
 requests
+cryptography>=41.0.0
+tomli>=2.0.0
