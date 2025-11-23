@@ -37,10 +37,10 @@ PLAYER_COLOR_PALETTE = [
 
 # Tab Names as Constants
 TAB_OVERVIEW = "📑 Overview"
-TAB_CHAR_STATS = "📊 Character Stats"
-TAB_RELIC_COUNT = "🔮 Relic Count"
-TAB_OMICRON_COUNT = "⚙️ Omicron Count"
-TAB_SPEED_MOD_COUNT = "🎲 Speed Mod Count"
+TAB_CHAR_STATS = "📊 Char Stats"
+TAB_RELIC_COUNT = "🔮 Relic Levels"
+TAB_OMICRON_COUNT = "⚙️ Omicrons"
+TAB_SPEED_MOD_COUNT = "🎲 Mods Speed"
 TAB_MOD_DISTRIBUTION = "⚖️ Mod Distribution"
 TAB_INFO = "ℹ️ App-Info"
 
@@ -1630,8 +1630,8 @@ def show_player_overview_tab(df_guild, compare_date, key_relevance_filter, relev
         st.session_state.player_relics_selection = ['R10', 'R9', 'R8']
     
     # Header mit Segmented Control in einem Container mit fester Breite
-    with st.container(width=750):
-        col1, col2 = st.columns([3, 3])
+    with st.container(width=900):
+        col1, col2, col3 = st.columns([2, 3, 1])
         with col1:
             st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_RELIC_COUNT}</h3>', unsafe_allow_html=True)
         with col2:
@@ -1649,6 +1649,25 @@ def show_player_overview_tab(df_guild, compare_date, key_relevance_filter, relev
             # Update session state
             if selected_relics != st.session_state.player_relics_selection:
                 st.session_state.player_relics_selection = selected_relics
+        with col3:
+            # Compare Date Dropdown
+            available_dates = sorted(df_guild['date'].unique(), reverse=True)
+            if 'compare_date_select' not in st.session_state and len(available_dates) >= 2:
+                st.session_state.compare_date_select = available_dates[1]
+            
+            # Selectbox mit Session State synchronisiert
+            current_value = st.session_state.get('compare_date_select', available_dates[1] if len(available_dates) >= 2 else available_dates[0])
+            if current_value not in available_dates:
+                current_value = available_dates[1] if len(available_dates) >= 2 else available_dates[0]
+            
+            compare_date = st.selectbox(
+                "Compare to:",
+                options=available_dates,
+                index=available_dates.index(current_value),
+                key="compare_date_relics",
+                label_visibility="collapsed",
+                on_change=lambda: setattr(st.session_state, 'compare_date_select', st.session_state.compare_date_relics)
+            )
             
             # Konvertiere zu Relic-Level-Liste (z.B. ['R8', 'R10'] → [8, 10])
             relic_levels = [int(r[1:]) for r in selected_relics] if selected_relics else []
@@ -1790,8 +1809,8 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
         st.session_state.player_omicrons_selection = ['TW', 'GAC']
     
     # Header mit Segmented Control in einem Container mit fester Breite
-    with st.container(width=750):
-        col1, col2 = st.columns([3, 3])
+    with st.container(width=900):
+        col1, col2, col3 = st.columns([2, 3, 1])
         with col1:
             st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_OMICRON_COUNT}</h3>', unsafe_allow_html=True)
         with col2:
@@ -1814,6 +1833,25 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
             # Update session state
             if selected_omicrons != st.session_state.player_omicrons_selection:
                 st.session_state.player_omicrons_selection = selected_omicrons
+        with col3:
+            # Compare Date Dropdown
+            available_dates = sorted(df_guild['date'].unique(), reverse=True)
+            if 'compare_date_select' not in st.session_state and len(available_dates) >= 2:
+                st.session_state.compare_date_select = available_dates[1]
+            
+            # Selectbox mit Session State synchronisiert
+            current_value = st.session_state.get('compare_date_select', available_dates[1] if len(available_dates) >= 2 else available_dates[0])
+            if current_value not in available_dates:
+                current_value = available_dates[1] if len(available_dates) >= 2 else available_dates[0]
+            
+            compare_date = st.selectbox(
+                "Compare to:",
+                options=available_dates,
+                index=available_dates.index(current_value),
+                key="compare_date_omicrons",
+                label_visibility="collapsed",
+                on_change=lambda: setattr(st.session_state, 'compare_date_select', st.session_state.compare_date_omicrons)
+            )
             
             # Konvertiere zu Spalten-Liste
             omicron_columns = [omicron_options[omi] for omi in selected_omicrons] if selected_omicrons else []
@@ -1955,8 +1993,8 @@ def show_player_speed_mods_tab(df_guild, compare_date, key_relevance_filter, rel
         st.session_state.player_speed_mods_selection = ['20+', '25+']
     
     # Header mit Segmented Control in einem Container mit fester Breite
-    with st.container(width=750):
-        col1, col2 = st.columns([3, 3])
+    with st.container(width=900):
+        col1, col2, col3 = st.columns([2, 3, 1])
         with col1:
             st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_SPEED_MOD_COUNT}</h3>', unsafe_allow_html=True)
         with col2:
@@ -1979,6 +2017,25 @@ def show_player_speed_mods_tab(df_guild, compare_date, key_relevance_filter, rel
             # Update session state
             if selected_speeds != st.session_state.player_speed_mods_selection:
                 st.session_state.player_speed_mods_selection = selected_speeds
+        with col3:
+            # Compare Date Dropdown
+            available_dates = sorted(df_guild['date'].unique(), reverse=True)
+            if 'compare_date_select' not in st.session_state and len(available_dates) >= 2:
+                st.session_state.compare_date_select = available_dates[1]
+            
+            # Selectbox mit Session State synchronisiert
+            current_value = st.session_state.get('compare_date_select', available_dates[1] if len(available_dates) >= 2 else available_dates[0])
+            if current_value not in available_dates:
+                current_value = available_dates[1] if len(available_dates) >= 2 else available_dates[0]
+            
+            compare_date = st.selectbox(
+                "Compare to:",
+                options=available_dates,
+                index=available_dates.index(current_value),
+                key="compare_date_speed_mods",
+                label_visibility="collapsed",
+                on_change=lambda: setattr(st.session_state, 'compare_date_select', st.session_state.compare_date_speed_mods)
+            )
             
             # Konvertiere zu Spalten-Liste
             speed_columns = [speed_options[speed] for speed in selected_speeds] if selected_speeds else []
@@ -2345,8 +2402,8 @@ def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, rele
     """, unsafe_allow_html=True)
     
     # Header mit Radio und Controls
-    with st.container():
-        col1, col2, col3, col4 = st.columns([2, 1, 2, 2])
+    with st.container(width=1600):
+        col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
         
         with col1:
             # Title Placeholder (wird nach Filterung aktualisiert)
@@ -2619,17 +2676,106 @@ def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, rele
 
 
 def show_settings_tab(df):
-    """Tab 7 - Settings & Data Management."""
+    """Tab 7 - App Info & User Guide."""
     
-    # Info-Bereich
     st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_INFO}</h3>', unsafe_allow_html=True)
-    st.markdown(f"""
-    - **Geladene CSVs:** {len(df['date'].unique())} Datenabzüge
-    - **Verfügbare Daten:** {', '.join(sorted(df['date'].unique(), reverse=True))}
-    - **Gesamt-Einträge:** {len(df):,} Zeilen
-    - **Memory:** {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
-    - **Spieler (neueste CSV):** {df[df['date'] == df['date'].max()]['AllyCode'].nunique()}
-    """)
+    
+    # Technische Info
+    with st.expander("📊 **Technische Informationen**", expanded=False):
+        st.markdown(f"""
+        - **Geladene CSVs:** {len(df['date'].unique())} Datenabzüge
+        - **Verfügbare Daten:** {', '.join(sorted(df['date'].unique(), reverse=True))}
+        - **Gesamt-Einträge:** {len(df):,} Zeilen
+        - **Memory:** {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+        - **Spieler (neueste CSV):** {df[df['date'] == df['date'].max()]['AllyCode'].nunique()}
+        """)
+    
+    # Benutzerhandbuch
+    st.markdown("## 📖 Benutzerhandbuch")
+    
+    with st.expander("🗂️ **Datenbasis**", expanded=False):
+        st.markdown("""
+        - **Export von Hot Utils:** Guild > Overview > Download Data > **Download Data with Full Roster!**
+        - Die CSV-Datei mit einem Datum versehen und an DrPivot senden
+        - Die Dateien werden im öffentlichen GitHub Repository der App abgelegt, werden aber vorher verschlüsselt (max. 1 pro Monat und Gilde)
+        - Ein manueller Export kann durch User temporär hochgeladen werden, es erfolgt aber ein "Berechtigungs-Check" gegen das Repository
+        """)
+    
+    with st.expander("🏠 **Startbildschirm**", expanded=False):
+        st.markdown("""
+        - **AllyCode (rechts oben):** Wenn eingegeben, erfolgt eine Markierung des Players in den Analysen
+        - **Tipp:** Nach Eingabe des AllyCodes einen Bookmark im Browser speichern (AllyCode dann vorausgefüllt)
+        - **Gilde auswählen:** Verfügbare Hot-Utils-Exporte der Gilde werden angezeigt
+        - **Daten auswählen:** Mehrere Exporte für Zeitvergleiche auswählen
+        - **Optional:** Aktuelleren Hot-Utils-Export zusätzlich hochladen (ist nur temporär)
+        """)
+    
+    with st.expander("🎛️ **Sidebar (Filterung)**", expanded=False):
+        st.markdown("""
+        - **New Selection:** Links oben - zurück zum Startbildschirm
+        - **Character Filter:**
+          - Combat Type, Alignment, Role, Category und Abilities (!) als die üblichen Filter
+          - Category und Abilities können mit **"AND"** oder **"OR"** verknüpft werden
+          - Beispiel: Sith "OR" First Order = 32 chars, aber mit "AND" nur DS Rey und Sith Trooper
+        - **Key Characters:** 👍 = 173 key chars mit empfohlenem Relic-Level festgelegt
+        - **Character Selection:** Unterster Filter für Auswahl eines einzelnen Characters (wirkt nur in "Char Stats")
+        - **Sidebar:** Kann aus- und eingeblendet werden
+        """)
+    
+    st.markdown("## 📊 Analysen")
+    
+    with st.expander(f"**{TAB_OVERVIEW}**", expanded=False):
+        st.markdown("""
+        **Bezieht sich auf aktuellsten Upload**
+        
+        - **Tabelle:** Gefilterte Chars mit:
+          - Relic-Level des ausgewählten Players
+          - Relic-Empfehlung mit Delta (Δ) und Kommentar
+          - Anzahl Relic-Level in der Gilde (R9, R8, R7, R6, <R6)
+        - **Relic-Kosten:** Benötigte Signaldaten und Relikt-Material, um die Empfehlung der gefilterten Chars zu erreichen
+        - **Hinweis:** Alle Tabellen in Streamlit können nach jeder Spalte sortiert werden
+        """)
+    
+    with st.expander(f"**{TAB_CHAR_STATS}**", expanded=False):
+        st.markdown("""
+        **Bezieht sich auf aktuellsten Upload**
+        
+        - **Diagramme:** Stats des ausgewählten Chars für alle Player der Gilde
+        - **Tabelle:** Detaillierte Stats-Übersicht aller Player
+        - **Interaktion:** Durch Klick auf eine Zeile können Player in Tabelle und Diagramm farblich markiert werden
+        - **Analyseziel:** Ist mein XYZ vernünftig gemodded oder komplett daneben?
+        """)
+    
+    with st.expander(f"**{TAB_RELIC_COUNT}** / **{TAB_OMICRON_COUNT}** / **{TAB_SPEED_MOD_COUNT}**", expanded=False):
+        st.markdown("""
+        **Vergleich von Datenexporten**
+        
+        - **Kennzahl-Auswahl:** Multi-Select für Relic-Level, Omicron-Typen oder Speed-Thresholds
+        - **Tabelle:** Alle Player mit der ausgewählten Kennzahl
+        - **Delta (Δ):** Fortschritt vom aktuellsten Datenstand zum ausgewählten Vergleichsdatum (Dropdown in Titelzeile)
+        - **Sortierung:** Nach Delta sortiert (größter Fortschritt oben)
+        - **Analyseziel:** Wie ist mein Fortschritt im Vergleich zu anderen in der Gilde?
+        """)
+    
+    with st.expander(f"**{TAB_MOD_DISTRIBUTION}**", expanded=False):
+        st.markdown("""
+        **Bezieht sich auf aktuellsten Upload**
+        
+        - **Datenquelle:** Mod-Sets bzw. Primaries werden aus den HU-Daten ausgezählt (pro Character)
+        - **Darstellung:** Gestapeltes Balkendiagramm für jeden Player
+        - **AVERAGE-Zeile:** Mittelwert über alle Player; ausgewählte Player (aus anderen Tabs) erscheinen über dieser Zeile
+        - **Sortierung:**
+          - Stats im Diagramm nach rechts absteigend sortiert (z.B. bei Mod Sets: Health ganz links)
+          - Über Dropdown kann eine Stat für vertikale Sortierung ausgewählt werden (erscheint dann links im Diagramm)
+        - **Legende:** Stats können aus- und eingeblendet werden
+        - **Filterung:** Sidebar-Filter sind wirksam
+        
+        **Analyseziel (Beispiel):**
+        - Haben meine key char attacker genügend viele Offense Primaries auf dem Cross?
+        - Passt die Verteilung meiner verfügbaren bzw. ausgerüsteten Mods, um mein Roster optimal zu modden?
+        
+        **Hinweis:** Es handelt sich nur um eine Tendenzaussage. Wenn jemand sehr wenig Speed Primaries auf dem Pfeil hat, sind vermutlich genügend bessere Stats mit sehr guten Speed Secondaries vorhanden!
+        """)
 
 
 def show_sidebar(df, guild_filter, data_info, player_name, available_dates, compare_date):
@@ -2655,15 +2801,6 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
     if st.sidebar.button("↩️ New Selection"):
         del st.session_state['analysis_started']
         st.rerun()
-    
-    # Date for delta comparison
-    default_compare_index = 1 if len(available_dates) >= 2 else 0
-    compare_date = st.sidebar.selectbox(
-        "Date for Delta Comparison:", 
-        available_dates, 
-        index=default_compare_index,
-        key="compare_date_select"
-    )
     
     st.sidebar.markdown("---")
     st.sidebar.markdown("**🎛️ Character Filter:**")
