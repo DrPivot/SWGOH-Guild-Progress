@@ -35,6 +35,37 @@ PLAYER_COLOR_PALETTE = [
     '#FF9999', '#99EE99', '#9999FF', '#DDDD99', '#FF99FF'
 ]
 
+# Tab Names as Constants
+TAB_OVERVIEW = "📑 Overview"
+TAB_CHAR_STATS = "📊 Character Stats"
+TAB_RELIC_COUNT = "🔮 Relic Count"
+TAB_OMICRON_COUNT = "⚙️ Omicron Count"
+TAB_SPEED_MOD_COUNT = "🎲 Speed Mod Count"
+TAB_MOD_DISTRIBUTION = "⚖️ Mod Distribution"
+TAB_INFO = "ℹ️ App-Info"
+
+# Mod Slot Constants
+MOD_ARROW = '↗'
+MOD_TRIANGLE = '▲'
+MOD_CIRCLE = '●'
+MOD_CROSS = '✙'
+
+# Mod Slot Display Names (for segmented control)
+# SLOT_ARROW = f'{MOD_ARROW} Arrow'
+# SLOT_TRIANGLE = f'{MOD_TRIANGLE} Triangle'
+# SLOT_CIRCLE = f'{MOD_CIRCLE} Circle'
+# SLOT_CROSS = f'{MOD_CROSS} Cross'
+SLOT_ARROW = MOD_ARROW
+SLOT_TRIANGLE = MOD_TRIANGLE
+SLOT_CIRCLE = MOD_CIRCLE
+SLOT_CROSS = MOD_CROSS
+
+# Mod Slot Keys (for data mapping)
+SLOT_KEY_ARROW = 'Arrow'
+SLOT_KEY_TRIANGLE = 'Triangle'
+SLOT_KEY_CIRCLE = 'Circle'
+SLOT_KEY_CROSS = 'Cross'
+
 # ============================================================================
 # SETUP
 # ============================================================================
@@ -675,37 +706,57 @@ def apply_filters(characters_data, alignment_filter, categories_filter, role_fil
     return filtered
 
 def show_character_overview(df, filtered_characters, characters_data, filters_active, key_relevance_filter=None, relevance_dict=None, relic_rec_dict=None, notes_dict=None, relic_costs=None):
-    # Falls Filter angewendet wurden, nur gefilterte Charaktere anzeigen
-    if filters_active:
-        if filtered_characters:
-            filtered_base_ids = [char['base_id'] for char in filtered_characters]
-            df_filtered = df[df['BaseId'].isin(filtered_base_ids)]
-        else:
-            # Filter aktiv aber keine Treffer - leere Ergebnismenge
-            df_filtered = df[df['BaseId'].isin([])]  # Leerer DataFrame
-    else:
-        # Keine Filter aktiv - ABER Key Relevance Filter könnte aktiv sein!
-        if key_relevance_filter and relevance_dict and len(key_relevance_filter) == 1:
-            # Filtere auf Key oder 👎
-            if '👍' in key_relevance_filter:
-                key_base_ids = [base_id for base_id, is_key in relevance_dict.items() if is_key == 'yes']
-                df_filtered = df[df['BaseId'].isin(key_base_ids)]
-            elif '👎' in key_relevance_filter:
-                other_base_ids = [base_id for base_id, is_key in relevance_dict.items() if is_key == 'no']
-                df_filtered = df[df['BaseId'].isin(other_base_ids)]
+    # === OVERVIEW zeigt Characters UND/ODER Ships basierend auf Combat Type Filter! ===
+    # filtered_base_ids aus Session State enthält nur Characters (für Mod Distribution)
+    # Overview braucht separate Logik für Ships und muss Combat Type Filter beachten!
+    
+    # Hole Combat Type Filter aus Session State
+    combat_type_filter = st.session_state.get('combat_type_filter', ['Character'])
+    
+    # Bestimme welche Combat Types angezeigt werden sollen
+    show_characters = 'Character' in combat_type_filter or not combat_type_filter
+    show_ships = 'Ship' in combat_type_filter or not combat_type_filter
+    
+    filtered_base_ids_chars = st.session_state.get('filtered_base_ids', []) if show_characters else []
+    
+    # Für Ships: Nutze relevance_dict und key_relevance_filter
+    filtered_base_ids_ships = []
+    if show_ships:
+        relevance_dict = relevance_dict or {}
+        available_ships = set(df[df['CombatType'] == 'Ship']['BaseId'].unique())
+        
+        # Filtere Ships basierend auf Key Relevance Filter
+        if key_relevance_filter:
+            if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
+                # Nur Key Ships
+                filtered_base_ids_ships = [base_id for base_id, value in relevance_dict.items() 
+                                          if value == 'yes' and base_id in available_ships]
+            elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
+                # Nur Non-Key Ships
+                filtered_base_ids_ships = [base_id for base_id, value in relevance_dict.items() 
+                                          if value == 'no' and base_id in available_ships]
             else:
-                df_filtered = df
+                # Beide oder keine = Alle Ships
+                filtered_base_ids_ships = list(available_ships)
         else:
-            # Keine Filter aktiv - alle anzeigen
-            df_filtered = df
+            filtered_base_ids_ships = list(available_ships)
+    
+    # Kombiniere Characters und Ships basierend auf Combat Type Filter
+    all_filtered_base_ids = filtered_base_ids_chars + filtered_base_ids_ships
+    
+    # Filtere DataFrame
+    if all_filtered_base_ids:
+        df_filtered = df[df['BaseId'].isin(all_filtered_base_ids)]
+    else:
+        df_filtered = df[df['BaseId'].isin([])]
     
     if df_filtered.empty:
         st.warning("❌ No data found for the selected filters.")
         return
     
-    # Zähle Characters und Ships für Titel
-    char_count = len(df_filtered[df_filtered['CombatType'] == 'Character']['BaseId'].unique())
-    ship_count = len(df_filtered[df_filtered['CombatType'] == 'Ship']['BaseId'].unique())
+    # Zähle Characters und Ships separat
+    char_count = len(filtered_base_ids_chars)
+    ship_count = len(filtered_base_ids_ships)
     
     # Erstelle Titel mit Anzahl
     title_parts = []
@@ -716,9 +767,9 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
     
     if title_parts:
         count_text = " & ".join(title_parts)
-        title = f'<h3 id="character-overview" style="margin-top: -12px; margin-bottom: 0;">📋 Character Overview ({count_text})</h3>'
+        title = f'<h3 id="character-overview" style="margin-top: -12px; margin-bottom: 0;">{TAB_OVERVIEW} ({count_text})</h3>'
     else:
-        title = '<h3 id="character-overview" style="margin-top: -12px; margin-bottom: 0;">📋 Character Overview (0 rows)</h3>'
+        title = f'<h3 id="character-overview" style="margin-top: -12px; margin-bottom: 0;">{TAB_OVERVIEW} (0 chars)</h3>'
     
     st.markdown(title, unsafe_allow_html=True)
     
@@ -1582,7 +1633,7 @@ def show_player_overview_tab(df_guild, compare_date, key_relevance_filter, relev
     with st.container(width=750):
         col1, col2 = st.columns([3, 3])
         with col1:
-            st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🔟 Player Relics</h3>', unsafe_allow_html=True)
+            st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_RELIC_COUNT}</h3>', unsafe_allow_html=True)
         with col2:
             # Relic Level Segmented Control - iOS-style button group
             relic_options = ['R10', 'R9', 'R8', 'R7', 'R6']
@@ -1742,7 +1793,7 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
     with st.container(width=750):
         col1, col2 = st.columns([3, 3])
         with col1:
-            st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🏐 Player Omicrons</h3>', unsafe_allow_html=True)
+            st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_OMICRON_COUNT}</h3>', unsafe_allow_html=True)
         with col2:
             # Omicron Type Segmented Control - iOS-style button group
             omicron_options = {
@@ -1907,7 +1958,7 @@ def show_player_speed_mods_tab(df_guild, compare_date, key_relevance_filter, rel
     with st.container(width=750):
         col1, col2 = st.columns([3, 3])
         with col1:
-            st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🎲 Player Speed Mods</h3>', unsafe_allow_html=True)
+            st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_SPEED_MOD_COUNT}</h3>', unsafe_allow_html=True)
         with col2:
             # Speed Threshold Segmented Control - iOS-style button group
             speed_options = {
@@ -2059,14 +2110,42 @@ def show_player_speed_mods_tab(df_guild, compare_date, key_relevance_filter, rel
 
 
 @st.cache_data
-def get_all_mod_primary_stats(df_guild, player_base, key_relevance_filter=None, relevance_dict=None):
+def get_raw_mod_data(df_guild, player_base, relevance_dict=None):
     """
-    Berechnet Primary Stat Counts für alle Slots pro Spieler (mit Caching).
+    Lädt ALLE Mod-Daten ohne Filter (mit Caching).
+    Speichert pro Player → pro Character → Mod-Daten + Metadata.
+    
+    Args:
+        relevance_dict: Optional {base_id: 'yes'/'no'} für IsKey Metadata
     
     Returns:
-        Dict[AllyCode, Dict]: {ally_code: {'Name': name, 'Arrow': {...}, 'Triangle': {...}, ...}}
+        Dict[AllyCode, Dict]: {
+            ally_code: {
+                'Name': player_name,
+                'Checked': bool,
+                'PlayerColor': str,
+                'Characters': {
+                    base_id: {
+                        'Name': char_name,
+                        'Arrow': {stat_name: count},
+                        'Triangle': {...},
+                        'Circle': {...},
+                        'Cross': {...},
+                        'Sets': {set_name: count},
+                        'Categories': [list],
+                        'Alignment': str,
+                        'Role': str,
+                        'IsKey': bool
+                    }
+                }
+            }
+        }
     """
-    from data.mod_mappings import get_primary_stat_name
+    from data.mod_mappings import get_primary_stat_name, get_mod_set_name
+    
+    # Lade Character-Metadata
+    char_data = load_character_data()
+    char_lookup = {char['base_id']: char for char in char_data}
     
     available_dates = sorted(df_guild['date'].unique(), reverse=True)
     newest_date = available_dates[0]
@@ -2075,20 +2154,11 @@ def get_all_mod_primary_stats(df_guild, player_base, key_relevance_filter=None, 
     # Nur Characters (keine Ships)
     df_chars = df_newest[df_newest['CombatType'] == 'Character']
     
-    # Wende Key Relevance Filter an (wenn aktiv)
-    if key_relevance_filter and relevance_dict:
-        if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-            key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'yes']
-            df_chars = df_chars[df_chars['BaseId'].isin(key_base_ids)]
-        elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-            non_key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'no']
-            df_chars = df_chars[df_chars['BaseId'].isin(non_key_base_ids)]
-    
     slot_to_column = {
-        'Arrow': 'PrimaryArrow',
-        'Triangle': 'PrimaryTriangle',
-        'Circle': 'PrimaryCircle',
-        'Cross': 'PrimaryCross'
+        SLOT_KEY_ARROW: 'PrimaryArrow',
+        SLOT_KEY_TRIANGLE: 'PrimaryTriangle',
+        SLOT_KEY_CIRCLE: 'PrimaryCircle',
+        SLOT_KEY_CROSS: 'PrimaryCross'
     }
     
     result = {}
@@ -2101,223 +2171,293 @@ def get_all_mod_primary_stats(df_guild, player_base, key_relevance_filter=None, 
         if df_player.empty:
             continue
         
-        player_data = {
-            'Name': player_name,
-            'Checked': player_row['Checked'],
-            'PlayerColor': player_row['PlayerColor']
-        }
+        characters = {}
         
-        # Zähle für jeden Slot separat
-        for slot, column in slot_to_column.items():
-            stat_counts = {}
-            for stat_id in df_player[column]:
-                stat_id_str = str(int(stat_id))
-                if stat_id_str == '0':  # Skip empty/unmoded
-                    continue
-                stat_name = get_primary_stat_name(stat_id_str)
-                stat_counts[stat_name] = stat_counts.get(stat_name, 0) + 1
-            player_data[slot] = stat_counts
-        
-        result[ally_code] = player_data
-    
-    return result
-
-@st.cache_data
-def get_all_mod_sets(df_guild, player_base, key_relevance_filter=None, relevance_dict=None):
-    """
-    Berechnet Mod Set Counts pro Spieler (mit Caching).
-    Parst die 'Sets' Spalte (z.B. "57+55" -> Speed + Health).
-    
-    Returns:
-        Dict[AllyCode, Dict]: {ally_code: {'Name': name, 'SetCounts': {...}}}
-    """
-    from data.mod_mappings import get_mod_set_name
-    
-    available_dates = sorted(df_guild['date'].unique(), reverse=True)
-    newest_date = available_dates[0]
-    df_newest = df_guild[df_guild['date'] == newest_date]
-    
-    # Nur Characters (keine Ships)
-    df_chars = df_newest[df_newest['CombatType'] == 'Character']
-    
-    # Wende Key Relevance Filter an (wenn aktiv)
-    if key_relevance_filter and relevance_dict:
-        if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-            key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'yes']
-            df_chars = df_chars[df_chars['BaseId'].isin(key_base_ids)]
-        elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-            non_key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'no']
-            df_chars = df_chars[df_chars['BaseId'].isin(non_key_base_ids)]
-    
-    result = {}
-    for _, player_row in player_base.iterrows():
-        ally_code = player_row['AllyCode']
-        player_name = player_row['Name']
-        
-        df_player = df_chars[df_chars['AllyCode'] == ally_code]
-        
-        if df_player.empty:
-            continue
-        
-        set_counts = {}
-        total_set_mods = 0
-        # Parse Sets column: "57+55+18" -> [57, 55, 18]
-        for sets_str in df_player['Sets']:
-            if pd.isna(sets_str) or sets_str == '0':
-                continue
-            set_ids = str(sets_str).split('+')
-            for set_id in set_ids:
-                set_id = set_id.strip()
-                if set_id and set_id != '0':
-                    set_info = get_mod_set_name(set_id)
-                    # get_mod_set_name returns tuple (name, set_count) - e.g. ('Health', 2) or ('Speed', 4)
-                    # Unknown sets return ('Unknown-XX', 0) - don't count them in set_size
-                    if isinstance(set_info, tuple):
-                        set_name, set_size = set_info
+        # Iteriere über alle Characters des Spielers
+        for _, char_row in df_player.iterrows():
+            base_id = char_row['BaseId']
+            char_name = char_row['Name']
+            
+            # Hole Metadata aus characters.json
+            char_meta = char_lookup.get(base_id, {})
+            categories = char_meta.get('categories', [])
+            
+            # Primary Stats für alle Slots
+            primary_stats = {}
+            for slot, column in slot_to_column.items():
+                stat_id = char_row.get(column, 0)
+                if stat_id and stat_id != 0:
+                    stat_id_str = str(int(stat_id))
+                    if stat_id_str != '0':
+                        stat_name = get_primary_stat_name(stat_id_str)
+                        primary_stats[slot] = {stat_name: 1}
                     else:
-                        # Should not happen, but safety fallback
-                        set_name = str(set_info)
-                        set_size = 0
-                    
-                    # Only count if set_size > 0 (skip Unknown sets)
-                    if set_size > 0:
-                        # Count: 1 set = set_size mods (2 or 4)
-                        set_counts[set_name] = set_counts.get(set_name, 0) + set_size
-                        total_set_mods += set_size
-        
-        # Calculate broken/no-set mods: Each character has 6 mod slots
-        total_chars = len(df_player)
-        total_possible_mods = total_chars * 6
-        broken_mods = total_possible_mods - total_set_mods
-        
-        if broken_mods > 0:
-            set_counts['Broken/No Set'] = broken_mods
+                        primary_stats[slot] = {}
+                else:
+                    primary_stats[slot] = {}
+            
+            # Mod Sets parsen
+            set_counts = {}
+            sets_str = char_row.get('Sets', '')
+            if pd.notna(sets_str) and sets_str != '0':
+                set_ids = str(sets_str).split('+')
+                for set_id in set_ids:
+                    set_id = set_id.strip()
+                    if set_id and set_id != '0':
+                        set_info = get_mod_set_name(set_id)
+                        if isinstance(set_info, tuple):
+                            set_name, set_size = set_info
+                        else:
+                            set_name = str(set_info)
+                            set_size = 0
+                        
+                        if set_size > 0:
+                            set_counts[set_name] = set_counts.get(set_name, 0) + set_size
+            
+            # Speichere Character-Daten
+            is_key = relevance_dict.get(base_id, 'no') == 'yes' if relevance_dict else False
+            
+            characters[base_id] = {
+                'Name': char_name,
+                'Arrow': primary_stats.get(SLOT_KEY_ARROW, {}),
+                'Triangle': primary_stats.get(SLOT_KEY_TRIANGLE, {}),
+                'Circle': primary_stats.get(SLOT_KEY_CIRCLE, {}),
+                'Cross': primary_stats.get(SLOT_KEY_CROSS, {}),
+                'Sets': set_counts,
+                'Categories': categories,
+                'Alignment': char_meta.get('alignment', 'Unknown'),
+                'Role': char_meta.get('role', 'Unknown'),
+                'IsKey': is_key
+            }
         
         result[ally_code] = {
             'Name': player_name,
-            'SetCounts': set_counts,
             'Checked': player_row['Checked'],
-            'PlayerColor': player_row['PlayerColor']
+            'PlayerColor': player_row['PlayerColor'],
+            'Characters': characters
         }
     
     return result
 
 
-def show_mod_sets_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
-    """Tab 6 - Mod Sets & Primary Stats Analysis."""
-    from data.mod_mappings import get_primary_stat_name, get_mod_set_name
+
+def filter_and_aggregate_mod_data_simple(raw_data, analysis_type, selected_slots, filtered_base_ids):
+    """
+    NEUE EINFACHE VERSION: Filtert nur nach BaseId-Liste.
+    Alle Character-Filter wurden bereits in der Sidebar angewendet!
     
-def show_mod_sets_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
+    Args:
+        raw_data: Output von get_raw_mod_data()
+        analysis_type: 'Primary Stats' oder 'Mod Sets'
+        selected_slots: Liste von Slots (z.B. ['Arrow', 'Triangle'])
+        filtered_base_ids: Liste der erlaubten BaseIds (von Sidebar)
+    
+    Returns:
+        Tuple[List[Dict], Set]: (Player-Stats, Alle Stats)
+    """
+    player_stats = []
+    all_stats = set()
+    
+    # Konvertiere zu Set für schnellere Lookups
+    allowed_base_ids = set(filtered_base_ids)
+    
+    for ally_code, player_data in raw_data.items():
+        stat_counts = {}
+        total = 0
+        total_chars_counted = 0
+        
+        # Iteriere über alle Characters des Spielers
+        for base_id, char_data in player_data['Characters'].items():
+            # EINZIGER FILTER: Ist BaseId in der erlaubten Liste?
+            if base_id not in allowed_base_ids:
+                continue
+            
+            # Character ist erlaubt - aggregiere Daten
+            total_chars_counted += 1
+            
+            if analysis_type == 'Primary Stats':
+                # Aggregiere über ausgewählte Slots
+                for slot in selected_slots:
+                    slot_data = char_data.get(slot, {})
+                    for stat_name, count in slot_data.items():
+                        stat_counts[stat_name] = stat_counts.get(stat_name, 0) + count
+                        total += count
+                        all_stats.add(stat_name)
+            else:
+                # Mod Sets
+                set_data = char_data.get('Sets', {})
+                for set_name, count in set_data.items():
+                    stat_counts[set_name] = stat_counts.get(set_name, 0) + count
+                    total += count
+                    all_stats.add(set_name)
+        
+        # Für Mod Sets: Berechne Broken Mods
+        if analysis_type == 'Mod Sets' and total_chars_counted > 0:
+            total_possible_mods = total_chars_counted * 6
+            broken_mods = total_possible_mods - total
+            if broken_mods > 0:
+                stat_counts['Broken/No Set'] = broken_mods
+                total += broken_mods
+                all_stats.add('Broken/No Set')
+        
+        # Nur Spieler mit Daten hinzufügen
+        if total > 0:
+            player_stats.append({
+                'Name': player_data['Name'],
+                'AllyCode': ally_code,
+                'Total': total,
+                'StatCounts': stat_counts,
+                'Checked': player_data['Checked'],
+                'PlayerColor': player_data['PlayerColor']
+            })
+    
+    return player_stats, all_stats
+
+
+def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
     """Tab 6 - Mod Distribution Analysis."""
     from data.mod_mappings import get_primary_stat_name, get_mod_set_name
+    
+    # Callback für Radio Button
+    def on_analysis_type_change():
+        """Callback um Session State sofort zu aktualisieren."""
+        st.session_state.mod_analysis_type = st.session_state.mod_analysis_radio
     
     # Hole player_base DIREKT aus Session State
     player_base = st.session_state.player_base_global
     
     # Initialize session state
     if 'mod_slot_selection' not in st.session_state:
-        st.session_state.mod_slot_selection = ['Arrow', 'Triangle', 'Circle', 'Cross']
+        st.session_state.mod_slot_selection = [SLOT_KEY_ARROW, SLOT_KEY_TRIANGLE, SLOT_KEY_CIRCLE, SLOT_KEY_CROSS]
     if 'mod_analysis_type' not in st.session_state:
         st.session_state.mod_analysis_type = 'Primary Stats'
     if 'mod_sort_by' not in st.session_state:
         st.session_state.mod_sort_by = 'Total'
     
+    # CSS: Verstecke Mod Slot Control wenn "Mod Sets" aktiv ist
+    hide_control = st.session_state.mod_analysis_type != 'Primary Stats'
+    st.markdown(f"""
+        <style>
+        .st-key-mod_slot_segmented {{
+            display: {'none' if hide_control else 'block'} !important;
+        }}
+        </style>
+    """, unsafe_allow_html=True)
+    
     # Header mit Radio und Controls
     with st.container():
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+        col1, col2, col3, col4 = st.columns([2, 1, 2, 2])
         
         with col1:
-            st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🎯 Mod Distribution</h3>', unsafe_allow_html=True)
-        
+            # Title Placeholder (wird nach Filterung aktualisiert)
+            title_placeholder = st.empty()
+
         with col2:
-            # Radio: Primary Stats vs Mod Sets
-            analysis_type = st.radio(
-                "Analysis Type",
-                options=['Primary Stats', 'Mod Sets'],
-                horizontal=True,
-                key="mod_analysis_radio",
-                label_visibility="collapsed"
-            )
-            st.session_state.mod_analysis_type = analysis_type
+            # Sort Dropdown (wird später mit Optionen gefüllt)
+            sort_placeholder = st.empty()
         
         with col3:
             # Slot Selection (nur bei Primary Stats)
-            if analysis_type == 'Primary Stats':
-                slot_options = ['Arrow', 'Triangle', 'Circle', 'Cross']
-                selected_slots = st.segmented_control(
+            if st.session_state.mod_analysis_type == 'Primary Stats':
+                # CSS für größere Mod Slot Symbole (nur für dieses spezifische Control)
+                st.markdown("""
+                    <style>
+                    /* Vergrößere Symbole im Mod Slot Control - nur mit key mod_slot_segmented */
+                    .st-key-mod_slot_segmented [aria-label="button group"] [data-testid="stIconEmoji"] {
+                        font-size: 30px !important;
+                    }
+                    /* Vergrößere Markdown-Symbole - nur mit key mod_slot_segmented */
+                    .st-key-mod_slot_segmented [aria-label="button group"] [data-testid="stMarkdownContainer"] p {
+                        font-size: 30px !important;
+                        margin: 0 !important;
+                    }
+                    /* Vertikale Ausrichtung korrigieren - nur mit key mod_slot_segmented */
+                    .st-key-mod_slot_segmented [aria-label="button group"] {
+                        margin-top: -10px !important;
+                        margin-left: 10px !important;
+                    }
+                    </style>
+                """, unsafe_allow_html=True)
+                
+                # Mapping: Display Name <-> Data Key
+                slot_display_to_key = {
+                    SLOT_ARROW: SLOT_KEY_ARROW,
+                    SLOT_TRIANGLE: SLOT_KEY_TRIANGLE,
+                    SLOT_CIRCLE: SLOT_KEY_CIRCLE,
+                    SLOT_CROSS: SLOT_KEY_CROSS
+                }
+                slot_key_to_display = {v: k for k, v in slot_display_to_key.items()}
+                
+                # Konvertiere Session State Keys zu Display Values für Default
+                default_display = [slot_key_to_display[key] for key in st.session_state.mod_slot_selection if key in slot_key_to_display]
+                
+                slot_options = [SLOT_ARROW, SLOT_TRIANGLE, SLOT_CIRCLE, SLOT_CROSS]
+                selected_slots_display = st.segmented_control(
                     "Mod Slot",
                     options=slot_options,
-                    default=st.session_state.mod_slot_selection,
+                    default=default_display,
                     key="mod_slot_segmented",
                     selection_mode="multi",
                     label_visibility="collapsed"
                 )
+                
+                # Konvertiere Display Values zurück zu Data Keys
+                selected_slots = [slot_display_to_key[disp] for disp in selected_slots_display] if selected_slots_display else []
+                
+                # Update session state nur wenn sich Werte geändert haben
                 if selected_slots != st.session_state.mod_slot_selection:
                     st.session_state.mod_slot_selection = selected_slots
             else:
                 selected_slots = None
                 st.markdown('<div style="height: 42px;"></div>', unsafe_allow_html=True)  # Spacer
-        
+
         with col4:
-            # Sort Dropdown (wird später mit Optionen gefüllt)
-            sort_placeholder = st.empty()
+            # Radio: Primary Stats vs Mod Sets
+            radio_options = ['Primary Stats', 'Mod Sets']
+            current_index = radio_options.index(st.session_state.mod_analysis_type)
+            analysis_type = st.radio(
+                "Analysis Type",
+                options=radio_options,
+                index=current_index,
+                horizontal=True,
+                key="mod_analysis_radio",
+                label_visibility="collapsed",
+                on_change=on_analysis_type_change  # Callback für sofortige Aktualisierung
+            )
     
     # Validierung
     if analysis_type == 'Primary Stats' and not selected_slots:
         st.warning("⚠️ Please select at least one mod slot.")
         return
     
-    # Lade gecachte Daten
-    if analysis_type == 'Primary Stats':
-        cached_data = get_all_mod_primary_stats(df_guild, player_base, key_relevance_filter, relevance_dict)
-    else:
-        cached_data = get_all_mod_sets(df_guild, player_base, key_relevance_filter, relevance_dict)
+    # Lade RAW Mod-Daten (gecacht, ohne Filter)
+    raw_data = get_raw_mod_data(df_guild, player_base, relevance_dict)
     
-    if not cached_data:
-        st.warning("⚠️ No mod data found for selected filters.")
+    if not raw_data:
+        st.warning("⚠️ No mod data found.")
         return
     
-    # Aggregiere Daten basierend auf Analyse-Typ
-    player_stats = []
-    all_stats = set()
+    # Nutze gefilterte BaseIds aus Session State (von Sidebar berechnet)
+    filtered_base_ids = st.session_state.get('filtered_base_ids', [])
     
-    if analysis_type == 'Primary Stats':
-        # Aggregiere über ausgewählte Slots
-        for ally_code, data in cached_data.items():
-            stat_counts = {}
-            total = 0
-            for slot in selected_slots:
-                slot_data = data.get(slot, {})
-                for stat_name, count in slot_data.items():
-                    stat_counts[stat_name] = stat_counts.get(stat_name, 0) + count
-                    total += count
-                    all_stats.add(stat_name)
-            
-            if total > 0:
-                player_stats.append({
-                    'Name': data['Name'],
-                    'AllyCode': ally_code,
-                    'Total': total,
-                    'StatCounts': stat_counts,
-                    'Checked': data['Checked'],
-                    'PlayerColor': data['PlayerColor']
-                })
-    else:
-        # Mod Sets - bereits aggregiert
-        for ally_code, data in cached_data.items():
-            set_counts = data.get('SetCounts', {})
-            total = sum(set_counts.values())
-            
-            if total > 0:
-                all_stats.update(set_counts.keys())
-                player_stats.append({
-                    'Name': data['Name'],
-                    'AllyCode': ally_code,
-                    'Total': total,
-                    'StatCounts': set_counts,
-                    'Checked': data['Checked'],
-                    'PlayerColor': data['PlayerColor']
-                })
+    # Filtere und aggregiere Daten - EINFACH mit BaseId-Liste!
+    player_stats, all_stats = filter_and_aggregate_mod_data_simple(
+        raw_data=raw_data,
+        analysis_type=analysis_type,
+        selected_slots=selected_slots if analysis_type == 'Primary Stats' else [],
+        filtered_base_ids=filtered_base_ids
+    )
+    
+    # Character Count = Anzahl der gefilterten BaseIds
+    total_chars = len(filtered_base_ids)
+    
+    # Update Titel mit Character-Anzahl
+    with title_placeholder:
+        if total_chars > 0:
+            title = f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_MOD_DISTRIBUTION} ({total_chars} chars)</h3>'
+        else:
+            title = f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_MOD_DISTRIBUTION} (0 chars)</h3>'
+        st.markdown(title, unsafe_allow_html=True)
     
     if not player_stats:
         st.warning("⚠️ No data found for selected options.")
@@ -2480,29 +2620,9 @@ def show_mod_sets_tab(df_guild, compare_date, key_relevance_filter, relevance_di
 
 def show_settings_tab(df):
     """Tab 7 - Settings & Data Management."""
-    st.header("⚙️ Settings")
-    
-    # UI Settings
-    st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🎨 UI Settings</h3>', unsafe_allow_html=True)
-    
-    # Toggle für Streamlit Header (Deploy-Button, Clear Cache)
-    if 'show_header' not in st.session_state:
-        st.session_state.show_header = True
-    
-    show_header = st.toggle(
-        "Streamlit Menü anzeigen (Deploy, Clear Cache)",
-        value=st.session_state.show_header,
-        help="Blendet das Streamlit-Menü oben rechts ein/aus"
-    )
-    
-    if show_header != st.session_state.show_header:
-        st.session_state.show_header = show_header
-        st.rerun()
-    
-    st.divider()
     
     # Info-Bereich
-    st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">ℹ️ App Information</h3>', unsafe_allow_html=True)
+    st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_INFO}</h3>', unsafe_allow_html=True)
     st.markdown(f"""
     - **Geladene CSVs:** {len(df['date'].unique())} Datenabzüge
     - **Verfügbare Daten:** {', '.join(sorted(df['date'].unique(), reverse=True))}
@@ -2569,7 +2689,7 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
     reset_suffix = f"_{st.session_state.filter_reset_counter}"
     
     # Check if active tab is a Player tab
-    is_player_tab = st.session_state.get('active_tab', '') in ["🔟 Player Relics", "🏐 Player Omicrons", "🎲 Player Speed Mods"]
+    is_player_tab = st.session_state.get('active_tab', '') in [TAB_RELIC_COUNT, TAB_OMICRON_COUNT, TAB_SPEED_MOD_COUNT]
     
     # Get available combat types from newest date
     date_filter = available_dates[0]
@@ -2758,33 +2878,70 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
     # Check if any filters are active
     filters_active = bool(alignment_filter or categories_filter or role_filter or ability_classes_filter)
     
+    # === NEUE ZENTRALE LOGIK: Berechne gefilterte BaseIds ===
+    # Diese Liste wird von Overview UND Mod Distribution verwendet!
+    characters_data = load_units_data()
+    relevance_dict, _, _ = load_character_relevance_data()
+    
+    # Erstelle Set der BaseIds die tatsächlich in den Spielerdaten vorhanden sind
+    # NUR CHARACTERS (combat_type=1), KEINE SHIPS!
+    available_base_ids = set(df[df['CombatType'] == 'Character']['BaseId'].unique())
+    
+    if is_player_tab:
+        # Player Tabs: Nur Key Relevance Filter
+        # Speichere Liste von BaseIds basierend auf Key Relevance
+        # WICHTIG: Nur Characters die auch in den Spielerdaten vorhanden sind!
+        if key_relevance_filter:
+            if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
+                # Nur Key Characters die auch vorhanden sind
+                filtered_base_ids = [base_id for base_id, value in relevance_dict.items() 
+                                   if value == 'yes' and base_id in available_base_ids]
+            elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
+                # Nur Non-Key Characters die auch vorhanden sind
+                filtered_base_ids = [base_id for base_id, value in relevance_dict.items() 
+                                   if value == 'no' and base_id in available_base_ids]
+            else:
+                # Beide oder keine Auswahl = Alle verfügbaren
+                filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
+                                   if base_id in available_base_ids]
+        else:
+            # Keine Filter = Alle verfügbaren
+            filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
+                               if base_id in available_base_ids]
+    else:
+        # Character Tabs: Alle Filter anwenden
+        # Filtere zuerst NUR Characters (combat_type=1), keine Ships!
+        characters_only = [char for char in characters_data if char.get('combat_type') == 1]
+        
+        filtered_characters = apply_filters(
+            characters_only,  # NUR Characters!
+            alignment_filter, 
+            categories_filter, 
+            role_filter, 
+            ability_classes_filter,
+            key_relevance_filter=key_relevance_filter,
+            relevance_dict=relevance_dict,
+            categories_use_and=st.session_state.get('categories_use_and', False),
+            ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
+        )
+        # Zusätzliche Sicherheit: Nur BaseIds die auch in available_base_ids sind
+        filtered_base_ids = [char['base_id'] for char in filtered_characters 
+                           if char['base_id'] in available_base_ids]
+    
+    # Speichere in Session State - wird von allen Tabs verwendet!
+    st.session_state.filtered_base_ids = filtered_base_ids
+    st.session_state.filters_active = filters_active
+    
     st.sidebar.markdown("---")
     
     # Character Selection for Tab 2
     st.sidebar.markdown("**☯ Character Selection:**")
     
-    # Load data for character selection
-    characters_data = load_units_data()
-    relevance_dict, _, _ = load_character_relevance_data()
-    
-    # Apply filters to get available characters
-    filtered_characters = apply_filters(
-        characters_data, 
-        alignment_filter, 
-        categories_filter, 
-        role_filter, 
-        ability_classes_filter,
-        key_relevance_filter=key_relevance_filter,
-        relevance_dict=relevance_dict,
-        categories_use_and=st.session_state.get('categories_use_and', False),
-        ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
-    )
-    
+    # Nutze gefilterte Characters für Selection
     if filters_active:
-        if filtered_characters:
-            available_characters_tab2 = [(char['name'], char['base_id']) for char in filtered_characters]
-        else:
-            available_characters_tab2 = []
+        available_characters_tab2 = [(char['name'], char['base_id']) 
+                                     for char in characters_data 
+                                     if char['base_id'] in filtered_base_ids]
     else:
         available_characters_tab2 = [(char['name'], char['base_id']) for char in characters_data]
     
@@ -2824,17 +2981,17 @@ def show_tab_menu():
     """
     # Initialize active_tab
     if 'active_tab' not in st.session_state:
-        st.session_state.active_tab = "📋 Character Overview"
+        st.session_state.active_tab = TAB_OVERVIEW
     
     # Tab options
     tabs = [
-        "📋 Character Overview",
-        "📊 Character Stats",
-        "🔟 Player Relics",
-        "🏐 Player Omicrons",
-        "🎲 Player Speed Mods",
-        "🎯 Mod Distribution",
-        "⚙️ Settings"
+        TAB_OVERVIEW,
+        TAB_CHAR_STATS,
+        TAB_RELIC_COUNT,
+        TAB_OMICRON_COUNT,
+        TAB_SPEED_MOD_COUNT,
+        TAB_MOD_DISTRIBUTION,
+        TAB_INFO
     ]
     
     # Callback to set active tab BEFORE rerun
@@ -2872,21 +3029,9 @@ def main():
         }
     )
     
-    # CSS für kompakteres Layout
-    # Header-Visibility dynamisch basierend auf Settings
-    if 'show_header' not in st.session_state:
-        st.session_state.show_header = True
-    
-    header_css = "" if st.session_state.show_header else """
-        /* Versteckt Streamlit Header komplett */
-        header[data-testid="stHeader"] {
-            display: none;
-        }
-    """
-    
+    # Custom CSS for better layout   
     st.markdown(f"""
         <style>
-        {header_css}
         /* Reduziert Abstände über Filter und Tabs */
         .block-container {{
             padding-top: 3rem;
@@ -3065,19 +3210,19 @@ def main():
     # ============================================================================
     # CONDITIONAL RENDERING - only active tab is executed!
     # Note: active_tab was already updated before sidebar rendering
-    if st.session_state.active_tab == "📋 Character Overview":
+    if st.session_state.active_tab == TAB_OVERVIEW:
         show_character_overview(df_filtered, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
-    elif st.session_state.active_tab == "📊 Character Stats":
+    elif st.session_state.active_tab == TAB_CHAR_STATS:
         show_analytics_tab(df_filtered, filtered_characters, characters_data, filters_active)
-    elif st.session_state.active_tab == "🔟 Player Relics":
+    elif st.session_state.active_tab == TAB_RELIC_COUNT:
         show_player_overview_tab(df, compare_date, key_relevance_filter, relevance_dict)
-    elif st.session_state.active_tab == "🏐 Player Omicrons":
+    elif st.session_state.active_tab == TAB_OMICRON_COUNT:
         show_player_omicrons_tab(df, compare_date, key_relevance_filter, relevance_dict)
-    elif st.session_state.active_tab == "🎲 Player Speed Mods":
+    elif st.session_state.active_tab == TAB_SPEED_MOD_COUNT:
         show_player_speed_mods_tab(df, compare_date, key_relevance_filter, relevance_dict)
-    elif st.session_state.active_tab == "🎯 Mod Distribution":
-        show_mod_sets_tab(df, compare_date, key_relevance_filter, relevance_dict)
-    elif st.session_state.active_tab == "⚙️ Settings":
+    elif st.session_state.active_tab == TAB_MOD_DISTRIBUTION:
+        show_mod_distribution_tab(df, compare_date, key_relevance_filter, relevance_dict)
+    elif st.session_state.active_tab == TAB_INFO:
         show_settings_tab(df)
 
 if __name__ == "__main__":
