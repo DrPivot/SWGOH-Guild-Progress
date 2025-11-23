@@ -2058,8 +2058,428 @@ def show_player_speed_mods_tab(df_guild, compare_date, key_relevance_filter, rel
     )
 
 
+@st.cache_data
+def get_all_mod_primary_stats(df_guild, player_base, key_relevance_filter=None, relevance_dict=None):
+    """
+    Berechnet Primary Stat Counts für alle Slots pro Spieler (mit Caching).
+    
+    Returns:
+        Dict[AllyCode, Dict]: {ally_code: {'Name': name, 'Arrow': {...}, 'Triangle': {...}, ...}}
+    """
+    from data.mod_mappings import get_primary_stat_name
+    
+    available_dates = sorted(df_guild['date'].unique(), reverse=True)
+    newest_date = available_dates[0]
+    df_newest = df_guild[df_guild['date'] == newest_date]
+    
+    # Nur Characters (keine Ships)
+    df_chars = df_newest[df_newest['CombatType'] == 'Character']
+    
+    # Wende Key Relevance Filter an (wenn aktiv)
+    if key_relevance_filter and relevance_dict:
+        if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
+            key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'yes']
+            df_chars = df_chars[df_chars['BaseId'].isin(key_base_ids)]
+        elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
+            non_key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'no']
+            df_chars = df_chars[df_chars['BaseId'].isin(non_key_base_ids)]
+    
+    slot_to_column = {
+        'Arrow': 'PrimaryArrow',
+        'Triangle': 'PrimaryTriangle',
+        'Circle': 'PrimaryCircle',
+        'Cross': 'PrimaryCross'
+    }
+    
+    result = {}
+    for _, player_row in player_base.iterrows():
+        ally_code = player_row['AllyCode']
+        player_name = player_row['Name']
+        
+        df_player = df_chars[df_chars['AllyCode'] == ally_code]
+        
+        if df_player.empty:
+            continue
+        
+        player_data = {
+            'Name': player_name,
+            'Checked': player_row['Checked'],
+            'PlayerColor': player_row['PlayerColor']
+        }
+        
+        # Zähle für jeden Slot separat
+        for slot, column in slot_to_column.items():
+            stat_counts = {}
+            for stat_id in df_player[column]:
+                stat_id_str = str(int(stat_id))
+                if stat_id_str == '0':  # Skip empty/unmoded
+                    continue
+                stat_name = get_primary_stat_name(stat_id_str)
+                stat_counts[stat_name] = stat_counts.get(stat_name, 0) + 1
+            player_data[slot] = stat_counts
+        
+        result[ally_code] = player_data
+    
+    return result
+
+@st.cache_data
+def get_all_mod_sets(df_guild, player_base, key_relevance_filter=None, relevance_dict=None):
+    """
+    Berechnet Mod Set Counts pro Spieler (mit Caching).
+    Parst die 'Sets' Spalte (z.B. "57+55" -> Speed + Health).
+    
+    Returns:
+        Dict[AllyCode, Dict]: {ally_code: {'Name': name, 'SetCounts': {...}}}
+    """
+    from data.mod_mappings import get_mod_set_name
+    
+    available_dates = sorted(df_guild['date'].unique(), reverse=True)
+    newest_date = available_dates[0]
+    df_newest = df_guild[df_guild['date'] == newest_date]
+    
+    # Nur Characters (keine Ships)
+    df_chars = df_newest[df_newest['CombatType'] == 'Character']
+    
+    # Wende Key Relevance Filter an (wenn aktiv)
+    if key_relevance_filter and relevance_dict:
+        if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
+            key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'yes']
+            df_chars = df_chars[df_chars['BaseId'].isin(key_base_ids)]
+        elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
+            non_key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'no']
+            df_chars = df_chars[df_chars['BaseId'].isin(non_key_base_ids)]
+    
+    result = {}
+    for _, player_row in player_base.iterrows():
+        ally_code = player_row['AllyCode']
+        player_name = player_row['Name']
+        
+        df_player = df_chars[df_chars['AllyCode'] == ally_code]
+        
+        if df_player.empty:
+            continue
+        
+        set_counts = {}
+        total_set_mods = 0
+        # Parse Sets column: "57+55+18" -> [57, 55, 18]
+        for sets_str in df_player['Sets']:
+            if pd.isna(sets_str) or sets_str == '0':
+                continue
+            set_ids = str(sets_str).split('+')
+            for set_id in set_ids:
+                set_id = set_id.strip()
+                if set_id and set_id != '0':
+                    set_info = get_mod_set_name(set_id)
+                    # get_mod_set_name returns tuple (name, set_count) - e.g. ('Health', 2) or ('Speed', 4)
+                    # Unknown sets return ('Unknown-XX', 0) - don't count them in set_size
+                    if isinstance(set_info, tuple):
+                        set_name, set_size = set_info
+                    else:
+                        # Should not happen, but safety fallback
+                        set_name = str(set_info)
+                        set_size = 0
+                    
+                    # Only count if set_size > 0 (skip Unknown sets)
+                    if set_size > 0:
+                        # Count: 1 set = set_size mods (2 or 4)
+                        set_counts[set_name] = set_counts.get(set_name, 0) + set_size
+                        total_set_mods += set_size
+        
+        # Calculate broken/no-set mods: Each character has 6 mod slots
+        total_chars = len(df_player)
+        total_possible_mods = total_chars * 6
+        broken_mods = total_possible_mods - total_set_mods
+        
+        if broken_mods > 0:
+            set_counts['Broken/No Set'] = broken_mods
+        
+        result[ally_code] = {
+            'Name': player_name,
+            'SetCounts': set_counts,
+            'Checked': player_row['Checked'],
+            'PlayerColor': player_row['PlayerColor']
+        }
+    
+    return result
+
+
+def show_mod_sets_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
+    """Tab 6 - Mod Sets & Primary Stats Analysis."""
+    from data.mod_mappings import get_primary_stat_name, get_mod_set_name
+    
+def show_mod_sets_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
+    """Tab 6 - Mod Distribution Analysis."""
+    from data.mod_mappings import get_primary_stat_name, get_mod_set_name
+    
+    # Hole player_base DIREKT aus Session State
+    player_base = st.session_state.player_base_global
+    
+    # Initialize session state
+    if 'mod_slot_selection' not in st.session_state:
+        st.session_state.mod_slot_selection = ['Arrow', 'Triangle', 'Circle', 'Cross']
+    if 'mod_analysis_type' not in st.session_state:
+        st.session_state.mod_analysis_type = 'Primary Stats'
+    if 'mod_sort_by' not in st.session_state:
+        st.session_state.mod_sort_by = 'Total'
+    
+    # Header mit Radio und Controls
+    with st.container():
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+        
+        with col1:
+            st.markdown('<h3 style="margin-top: -12px; margin-bottom: 0;">🎯 Mod Distribution</h3>', unsafe_allow_html=True)
+        
+        with col2:
+            # Radio: Primary Stats vs Mod Sets
+            analysis_type = st.radio(
+                "Analysis Type",
+                options=['Primary Stats', 'Mod Sets'],
+                horizontal=True,
+                key="mod_analysis_radio",
+                label_visibility="collapsed"
+            )
+            st.session_state.mod_analysis_type = analysis_type
+        
+        with col3:
+            # Slot Selection (nur bei Primary Stats)
+            if analysis_type == 'Primary Stats':
+                slot_options = ['Arrow', 'Triangle', 'Circle', 'Cross']
+                selected_slots = st.segmented_control(
+                    "Mod Slot",
+                    options=slot_options,
+                    default=st.session_state.mod_slot_selection,
+                    key="mod_slot_segmented",
+                    selection_mode="multi",
+                    label_visibility="collapsed"
+                )
+                if selected_slots != st.session_state.mod_slot_selection:
+                    st.session_state.mod_slot_selection = selected_slots
+            else:
+                selected_slots = None
+                st.markdown('<div style="height: 42px;"></div>', unsafe_allow_html=True)  # Spacer
+        
+        with col4:
+            # Sort Dropdown (wird später mit Optionen gefüllt)
+            sort_placeholder = st.empty()
+    
+    # Validierung
+    if analysis_type == 'Primary Stats' and not selected_slots:
+        st.warning("⚠️ Please select at least one mod slot.")
+        return
+    
+    # Lade gecachte Daten
+    if analysis_type == 'Primary Stats':
+        cached_data = get_all_mod_primary_stats(df_guild, player_base, key_relevance_filter, relevance_dict)
+    else:
+        cached_data = get_all_mod_sets(df_guild, player_base, key_relevance_filter, relevance_dict)
+    
+    if not cached_data:
+        st.warning("⚠️ No mod data found for selected filters.")
+        return
+    
+    # Aggregiere Daten basierend auf Analyse-Typ
+    player_stats = []
+    all_stats = set()
+    
+    if analysis_type == 'Primary Stats':
+        # Aggregiere über ausgewählte Slots
+        for ally_code, data in cached_data.items():
+            stat_counts = {}
+            total = 0
+            for slot in selected_slots:
+                slot_data = data.get(slot, {})
+                for stat_name, count in slot_data.items():
+                    stat_counts[stat_name] = stat_counts.get(stat_name, 0) + count
+                    total += count
+                    all_stats.add(stat_name)
+            
+            if total > 0:
+                player_stats.append({
+                    'Name': data['Name'],
+                    'AllyCode': ally_code,
+                    'Total': total,
+                    'StatCounts': stat_counts,
+                    'Checked': data['Checked'],
+                    'PlayerColor': data['PlayerColor']
+                })
+    else:
+        # Mod Sets - bereits aggregiert
+        for ally_code, data in cached_data.items():
+            set_counts = data.get('SetCounts', {})
+            total = sum(set_counts.values())
+            
+            if total > 0:
+                all_stats.update(set_counts.keys())
+                player_stats.append({
+                    'Name': data['Name'],
+                    'AllyCode': ally_code,
+                    'Total': total,
+                    'StatCounts': set_counts,
+                    'Checked': data['Checked'],
+                    'PlayerColor': data['PlayerColor']
+                })
+    
+    if not player_stats:
+        st.warning("⚠️ No data found for selected options.")
+        return
+    
+    # Sortiere Stats nach Häufigkeit (häufigste zuerst)
+    stat_totals = {}
+    for player in player_stats:
+        for stat, count in player['StatCounts'].items():
+            stat_totals[stat] = stat_totals.get(stat, 0) + count
+    
+    all_stats_sorted = sorted(all_stats, key=lambda x: stat_totals.get(x, 0), reverse=True)
+    
+    # Sort-Dropdown mit dynamischen Optionen
+    with sort_placeholder:
+        sort_options = ['Total', 'Player Name'] + all_stats_sorted
+        sort_by = st.selectbox(
+            "Sort by:",
+            options=sort_options,
+            index=sort_options.index(st.session_state.mod_sort_by) if st.session_state.mod_sort_by in sort_options else 0,
+            key="mod_sort_select",
+            label_visibility="collapsed"
+        )
+        st.session_state.mod_sort_by = sort_by
+    
+    # Erstelle DataFrame und sortiere
+    df_stats = pd.DataFrame(player_stats)
+    
+    if sort_by == 'Total':
+        df_stats = df_stats.sort_values(by=['Checked', 'Total'], ascending=[False, False])
+    elif sort_by == 'Player Name':
+        df_stats = df_stats.sort_values(by=['Checked', 'Name'], ascending=[False, True])
+    else:
+        # Sortiere nach spezifischer Stat
+        df_stats['SortValue'] = df_stats['StatCounts'].apply(lambda x: x.get(sort_by, 0))
+        df_stats = df_stats.sort_values(by=['Checked', 'SortValue'], ascending=[False, False])
+        df_stats = df_stats.drop('SortValue', axis=1)
+    
+    df_stats = df_stats.reset_index(drop=True)
+    
+    # Berechne AVERAGE-Zeile
+    avg_stat_counts = {}
+    total_players = len(df_stats)
+    
+    if total_players > 0:
+        for stat in all_stats:
+            total_count = sum(player['StatCounts'].get(stat, 0) for player in player_stats)
+            avg_stat_counts[stat] = total_count / total_players
+        
+        avg_total = sum(avg_stat_counts.values())
+        
+        avg_row = pd.DataFrame([{
+            'Name': '∅ ━━━━━━━━━',
+            'AllyCode': '',
+            'Total': avg_total,
+            'StatCounts': avg_stat_counts,
+            'Checked': False,  # Wird separat behandelt
+            'PlayerColor': '#FFFFFF'
+        }])
+        
+        # Finde Position: nach letztem checked player
+        last_checked_idx = df_stats[df_stats['Checked'] == True].index.max() if df_stats['Checked'].any() else -1
+        insert_pos = last_checked_idx + 1 if last_checked_idx >= 0 else 0
+        
+        # Füge AVERAGE ein
+        df_stats = pd.concat([
+            df_stats.iloc[:insert_pos],
+            avg_row,
+            df_stats.iloc[insert_pos:]
+        ]).reset_index(drop=True)
+    
+    # Bestimme Reihenfolge für Legend/Traces
+    # Wenn nach spezifischer Stat sortiert: Diese Stat zuerst, Rest nach Häufigkeit
+    if sort_by not in ['Total', 'Player Name'] and sort_by in all_stats_sorted:
+        # Sortierte Stat zuerst, dann Rest nach Häufigkeit
+        stats_display_order = [sort_by] + [s for s in all_stats_sorted if s != sort_by]
+    else:
+        # Standard: Nach Häufigkeit
+        stats_display_order = all_stats_sorted
+    
+    # Erstelle Horizontal Stacked Bar Chart
+    import plotly.graph_objects as go
+    
+    # Feste Farb-Zuordnung für Stats (konsistent über Primary Stats und Mod Sets)
+    STAT_COLOR_MAP = {
+        'Speed': '#FF6B6B',           # Rot - wichtigster Stat
+        'Offense': '#FFA07A',         # Orange
+        'Crit Damage': '#F7DC6F',     # Gelb
+        'Crit Chance': '#FFD700',     # Gold
+        'Health': '#98D8C8',          # Mint
+        'Protection': '#4ECDC4',      # Türkis
+        'Defense': '#45B7D1',         # Blau
+        'Potency': '#BB8FCE',         # Lila
+        'Tenacity': '#85C1E2',        # Hellblau
+        'Accuracy': '#F8B88B',        # Pfirsich
+        'Crit Avoidance': '#ABEBC6',  # Hellgrün
+        'Broken/No Set': '#CCCCCC',   # Grau
+        'Empty/Unmoded': '#E0E0E0'    # Hellgrau
+    }
+    
+    # Fallback-Farben für unbekannte Stats
+    fallback_colors = ['#D3D3D3', '#B0B0B0', '#909090']
+    
+    # Erstelle stat_colors dict mit festen Zuordnungen
+    stat_colors = {}
+    fallback_idx = 0
+    for stat in all_stats_sorted:
+        if stat in STAT_COLOR_MAP:
+            stat_colors[stat] = STAT_COLOR_MAP[stat]
+        else:
+            stat_colors[stat] = fallback_colors[fallback_idx % len(fallback_colors)]
+            fallback_idx += 1
+    
+    fig = go.Figure()
+    
+    # Für jede Stat: Horizontal Bar (in dynamischer Reihenfolge)
+    for stat in stats_display_order:
+        values = [stats.get(stat, 0) for stats in df_stats['StatCounts']]
+        
+        # Formatierung: Ganze Zahlen für echte Player, Dezimalzahlen für AVERAGE
+        text_values = []
+        for idx, val in enumerate(values):
+            if df_stats.iloc[idx]['Name'] == '∅ ━━━━━━━━━':
+                text_values.append(f'{val:.1f}')
+            else:
+                text_values.append(int(val))
+        
+        fig.add_trace(go.Bar(
+            name=stat,
+            y=df_stats['Name'],
+            x=values,
+            orientation='h',
+            marker=dict(color=stat_colors[stat]),
+            text=text_values,
+            textposition='inside',
+            hovertemplate=f'{stat}: %{{x:.1f}}<extra></extra>'
+        ))
+    
+    # Layout
+    fig.update_layout(
+        barmode='stack',
+        height=max(370, len(df_stats) * 25 - 70),
+        margin=dict(l=10, r=10, t=10, b=40),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0
+        ),
+        xaxis_title="Count",
+        yaxis=dict(autorange="reversed"),
+        hovermode='closest'
+    )
+    
+    # Zeige Chart
+    st.plotly_chart(fig, width='stretch')
+
+
 def show_settings_tab(df):
-    """Tab 6 - Settings & Data Management."""
+    """Tab 7 - Settings & Data Management."""
     st.header("⚙️ Settings")
     
     # UI Settings
@@ -2090,6 +2510,358 @@ def show_settings_tab(df):
     - **Memory:** {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
     - **Spieler (neueste CSV):** {df[df['date'] == df['date'].max()]['AllyCode'].nunique()}
     """)
+
+
+def show_sidebar(df, guild_filter, data_info, player_name, available_dates, compare_date):
+    """
+    Zeigt die komplette Sidebar mit allen Filtern und Controls.
+    
+    Args:
+        df: DataFrame mit allen Daten
+        guild_filter: Name der aktuellen Gilde
+        data_info: String mit Info über geladene CSVs
+        player_name: Name des Default-Spielers
+        available_dates: Liste verfügbarer Daten
+        compare_date: Aktuell ausgewähltes Vergleichsdatum
+    
+    Returns:
+        Tuple: (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
+                role_filter, ability_classes_filter, filters_active)
+    """
+    # Sidebar Info
+    st.sidebar.markdown(f"**Guild:** {guild_filter}  \n**Data:** {data_info}  \n**Player:** {player_name}")
+    
+    # Button to go back to selection
+    if st.sidebar.button("↩️ New Selection"):
+        del st.session_state['analysis_started']
+        st.rerun()
+    
+    # Date for delta comparison
+    default_compare_index = 1 if len(available_dates) >= 2 else 0
+    compare_date = st.sidebar.selectbox(
+        "Date for Delta Comparison:", 
+        available_dates, 
+        index=default_compare_index,
+        key="compare_date_select"
+    )
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**🎛️ Character Filter:**")
+    
+    # Initialize session state for filters
+    if 'combat_type_filter' not in st.session_state:
+        st.session_state.combat_type_filter = ['Character']
+    if 'key_relevance_filter' not in st.session_state:
+        st.session_state.key_relevance_filter = ['👍']
+    if 'alignment_filter' not in st.session_state:
+        st.session_state.alignment_filter = []
+    if 'categories_filter' not in st.session_state:
+        st.session_state.categories_filter = []
+    if 'role_filter' not in st.session_state:
+        st.session_state.role_filter = []
+    if 'ability_classes_filter' not in st.session_state:
+        st.session_state.ability_classes_filter = []
+    
+    # Reset counter for unique keys
+    if 'filter_reset_counter' not in st.session_state:
+        st.session_state.filter_reset_counter = 0
+    
+    reset_suffix = f"_{st.session_state.filter_reset_counter}"
+    
+    # Check if active tab is a Player tab
+    is_player_tab = st.session_state.get('active_tab', '') in ["🔟 Player Relics", "🏐 Player Omicrons", "🎲 Player Speed Mods"]
+    
+    # Get available combat types from newest date
+    date_filter = available_dates[0]
+    df_filtered = df[df['date'] == date_filter]
+    available_combat_types = sorted(df_filtered['CombatType'].unique())
+    
+    # CombatType Filter + Key Relevance Filter
+    if is_player_tab:
+        # Key Relevance Filter alone (full width)
+        key_relevance_filter = st.sidebar.segmented_control(
+            "Key Relevance",
+            options=['👍', '👎'],
+            default=st.session_state.get('key_relevance_filter', ['👍']),
+            key=f"key_relevance_segmented{reset_suffix}",
+            selection_mode="multi",
+            label_visibility="collapsed"
+        )
+        if key_relevance_filter != st.session_state.get('key_relevance_filter', ['👍']):
+            st.session_state.key_relevance_filter = key_relevance_filter
+        
+        combat_type_filter = []
+        alignment_filter = []
+        categories_filter = []
+        role_filter = []
+        ability_classes_filter = []
+    else:
+        # Character tabs: CombatType + Key Relevance side by side
+        col1, col2 = st.sidebar.columns([3, 2])
+        with col1:
+            combat_type_filter = st.segmented_control(
+                "Combat Type",
+                options=available_combat_types,
+                default=st.session_state.get('combat_type_filter', ['Character']),
+                key=f"combat_type_segmented{reset_suffix}",
+                selection_mode="multi",
+                label_visibility="collapsed"
+            )
+            if combat_type_filter != st.session_state.get('combat_type_filter', ['Character']):
+                st.session_state.combat_type_filter = combat_type_filter
+        
+        with col2:
+            key_relevance_filter = st.segmented_control(
+                "Key Relevance",
+                options=['👍', '👎'],
+                default=st.session_state.get('key_relevance_filter', ['👍']),
+                key=f"key_relevance_segmented{reset_suffix}",
+                selection_mode="multi",
+                label_visibility="collapsed"
+            )
+            if key_relevance_filter != st.session_state.get('key_relevance_filter', ['👍']):
+                st.session_state.key_relevance_filter = key_relevance_filter
+        
+        # Filter DataFrame by CombatType
+        if combat_type_filter:
+            df_filtered = df_filtered[df_filtered['CombatType'].isin(combat_type_filter)]
+        
+        # Load characters data for dynamic filters
+        characters_data = load_units_data()
+        available_base_ids = set(df_filtered['BaseId'].unique())
+        characters_data_filtered = [char for char in characters_data if char.get('base_id') in available_base_ids]
+        
+        # Collect all available options
+        all_alignments = sorted(list({char.get('alignment', '') for char in characters_data_filtered if char.get('alignment')}))
+        
+        # Alignment Filter
+        alignment_filter = st.sidebar.segmented_control(
+            "Alignment",
+            options=all_alignments,
+            default=st.session_state.get('alignment_filter', []),
+            key=f"alignment_segmented{reset_suffix}",
+            selection_mode="multi",
+            label_visibility="collapsed"
+        )
+        if alignment_filter != st.session_state.get('alignment_filter', []):
+            st.session_state.alignment_filter = alignment_filter
+        
+        # Filter characters for subsequent filters
+        filtered_chars_for_categories = characters_data_filtered
+        if alignment_filter:
+            filtered_chars_for_categories = [char for char in filtered_chars_for_categories if char.get('alignment') in alignment_filter]
+        
+        # Available roles
+        filtered_chars_for_roles = filtered_chars_for_categories
+        roles_set = set()
+        for char in filtered_chars_for_roles:
+            role = char.get('role')
+            if role and role.strip():
+                if role != 'Unknown':
+                    roles_set.add(role)
+            else:
+                roles_set.add('?')
+        available_roles = sorted(list(roles_set))
+        
+        # Role Filter
+        role_filter = st.sidebar.segmented_control(
+            "Role",
+            options=available_roles,
+            default=[role for role in st.session_state.get('role_filter', []) if role in available_roles],
+            key=f"role_segmented{reset_suffix}",
+            selection_mode="multi",
+            label_visibility="collapsed"
+        )
+        if role_filter != st.session_state.get('role_filter', []):
+            st.session_state.role_filter = role_filter
+        
+        # Available categories
+        available_categories = sorted(list({cat for char in filtered_chars_for_categories for cat in char.get('categories', [])}))
+        
+        # Category Filter with AND/OR toggle
+        col_cat_label, col_cat_toggle = st.sidebar.columns([2, 2])
+        with col_cat_label:
+            st.markdown("**Categories:**")
+        with col_cat_toggle:
+            current_state = st.session_state.get('categories_use_and', False)
+            categories_use_and = st.checkbox(
+                "AND" if current_state else "OR",
+                value=current_state,
+                key=f"categories_and_toggle{reset_suffix}",
+                help="Checked: AND logic (all selected). Unchecked: OR logic (any selected)"
+            )
+            if categories_use_and != current_state:
+                st.session_state.categories_use_and = categories_use_and
+                st.rerun()
+        
+        categories_filter = st.sidebar.multiselect(
+            "Categories",
+            options=available_categories,
+            default=[cat for cat in st.session_state.get('categories_filter', []) if cat in available_categories],
+            key=f"categories_multiselect{reset_suffix}",
+            label_visibility="collapsed"
+        )
+        if categories_filter != st.session_state.get('categories_filter', []):
+            st.session_state.categories_filter = categories_filter
+        
+        # Filter further for ability classes
+        filtered_chars_for_abilities = filtered_chars_for_categories
+        if role_filter:
+            filtered_chars_for_abilities = [char for char in filtered_chars_for_abilities if char.get('role') in role_filter]
+        if categories_filter:
+            filtered_chars_for_abilities = [char for char in filtered_chars_for_abilities 
+                                          if any(cat in char.get('categories', []) for cat in categories_filter)]
+        
+        # Available ability classes
+        available_ability_classes = sorted(list({ac for char in filtered_chars_for_abilities for ac in char.get('ability_classes', [])}))
+        
+        # Ability Classes Filter with AND/OR toggle
+        col_ac_label, col_ac_toggle = st.sidebar.columns([2, 2])
+        with col_ac_label:
+            st.markdown("**Ability classes:**")
+        with col_ac_toggle:
+            current_state = st.session_state.get('ability_classes_use_and', False)
+            ability_classes_use_and = st.checkbox(
+                "AND" if current_state else "OR",
+                value=current_state,
+                key=f"ability_classes_and_toggle{reset_suffix}",
+                help="Checked: AND logic (all selected). Unchecked: OR logic (any selected)"
+            )
+            if ability_classes_use_and != current_state:
+                st.session_state.ability_classes_use_and = ability_classes_use_and
+                st.rerun()
+        
+        ability_classes_filter = st.sidebar.multiselect(
+            "Ability classes",
+            options=available_ability_classes,
+            default=[ac for ac in st.session_state.get('ability_classes_filter', []) if ac in available_ability_classes],
+            key=f"ability_classes_multiselect{reset_suffix}",
+            label_visibility="collapsed"
+        )
+        if ability_classes_filter != st.session_state.get('ability_classes_filter', []):
+            st.session_state.ability_classes_filter = ability_classes_filter
+        
+        # Reset filters button
+        if st.sidebar.button("🗑️ Reset all filters"):
+            st.session_state.filter_reset_counter += 1
+            st.session_state.combat_type_filter = []
+            st.session_state.alignment_filter = []
+            st.session_state.categories_filter = []
+            st.session_state.categories_use_and = False
+            st.session_state.role_filter = []
+            st.session_state.ability_classes_filter = []
+            st.session_state.ability_classes_use_and = False
+            if 'selected_character_tab2' in st.session_state:
+                del st.session_state.selected_character_tab2
+            st.rerun()
+    
+    # Check if any filters are active
+    filters_active = bool(alignment_filter or categories_filter or role_filter or ability_classes_filter)
+    
+    st.sidebar.markdown("---")
+    
+    # Character Selection for Tab 2
+    st.sidebar.markdown("**☯ Character Selection:**")
+    
+    # Load data for character selection
+    characters_data = load_units_data()
+    relevance_dict, _, _ = load_character_relevance_data()
+    
+    # Apply filters to get available characters
+    filtered_characters = apply_filters(
+        characters_data, 
+        alignment_filter, 
+        categories_filter, 
+        role_filter, 
+        ability_classes_filter,
+        key_relevance_filter=key_relevance_filter,
+        relevance_dict=relevance_dict,
+        categories_use_and=st.session_state.get('categories_use_and', False),
+        ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
+    )
+    
+    if filters_active:
+        if filtered_characters:
+            available_characters_tab2 = [(char['name'], char['base_id']) for char in filtered_characters]
+        else:
+            available_characters_tab2 = []
+    else:
+        available_characters_tab2 = [(char['name'], char['base_id']) for char in characters_data]
+    
+    character_names_tab2 = [name for name, base_id in available_characters_tab2]
+    
+    if character_names_tab2:
+        selected_character_tab2 = st.sidebar.selectbox(
+            "Character for Tab 2:",
+            character_names_tab2,
+            key=f"tab2_character_select{reset_suffix}"
+        )
+        
+        if 'selected_character_tab2' not in st.session_state:
+            st.session_state.selected_character_tab2 = selected_character_tab2
+        else:
+            if st.session_state.selected_character_tab2 != selected_character_tab2:
+                st.session_state.selected_character_tab2 = selected_character_tab2
+    
+    # Uncheck All button
+    st.sidebar.markdown("---")
+    if st.sidebar.button("❌ Uncheck All", key="uncheck_all_btn", width='stretch'):
+        if 'player_base_global' in st.session_state:
+            default_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
+            st.session_state.player_base_global['Checked'] = (
+                st.session_state.player_base_global['AllyCode'].astype(str) == default_ally_code
+            )
+            st.rerun()
+    
+    return (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
+            role_filter, ability_classes_filter, filters_active)
+
+
+def show_tab_menu():
+    """
+    Zeigt Tab-Navigation mit Buttons.
+    Returns: active_tab (string)
+    """
+    # Initialize active_tab
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = "📋 Character Overview"
+    
+    # Tab options
+    tabs = [
+        "📋 Character Overview",
+        "📊 Character Stats",
+        "🔟 Player Relics",
+        "🏐 Player Omicrons",
+        "🎲 Player Speed Mods",
+        "🎯 Mod Distribution",
+        "⚙️ Settings"
+    ]
+    
+    # Callback to set active tab BEFORE rerun
+    def set_tab(tab_name):
+        st.session_state.active_tab = tab_name
+    
+    # Create container with columns for buttons
+    with st.container():
+        cols = st.columns(7, gap="small")
+        
+        for i, tab in enumerate(tabs):
+            with cols[i]:
+                # Button type: primary if active, secondary otherwise
+                button_type = "primary" if st.session_state.active_tab == tab else "secondary"
+                
+                # Button with callback
+                st.button(
+                    tab,
+                    key=f"tab_btn_{i}",
+                    type=button_type,
+                    on_click=set_tab,
+                    args=(tab,),
+                    use_container_width=True
+                )
+    
+    return st.session_state.active_tab
+
 
 def main():
     st.set_page_config(
@@ -2128,10 +2900,33 @@ def main():
         section[data-testid="stSidebar"] > div {{
             padding-top: 0rem;
         }}
-        /* Sidebar-Breite erhöhen (pills nebeneinander) */
-        section[data-testid="stSidebar"] {{
+        /* Sidebar-Breite erhöhen (pills nebeneinander) - nur wenn expanded */
+        section[data-testid="stSidebar"]:not([aria-expanded="false"]) {{
             width: 380px !important;
             min-width: 380px !important;
+        }}
+        
+        /* Tab Navigation Buttons - consistent height */
+        button[kind="primary"], button[kind="secondary"] {{
+            height: 42px !important;
+            min-height: 42px !important;
+            max-height: 42px !important;
+            padding-top: 0.25rem !important;
+            padding-bottom: 0.25rem !important;
+        }}
+        
+        /* Fix paragraph inside tab buttons */
+        button[kind="primary"] p, button[kind="secondary"] p {{
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 0.875rem !important;
+            line-height: 1.2 !important;
+        }}
+        
+        /* Columns should have same height */
+        div[data-testid="column"] {{
+            display: flex !important;
+            flex-direction: column !important;
         }}
         </style>
     """, unsafe_allow_html=True)
@@ -2182,29 +2977,9 @@ def main():
     player_name_match = df_newest_temp[df_newest_temp['AllyCode'].astype(str) == default_ally_code]['Name'].unique()
     player_name = player_name_match[0] if len(player_name_match) > 0 else default_ally_code
     
-    # Update sidebar info with player name
-    st.sidebar.markdown(f"**Guild:** {guild_filter}  \n**Data:** {data_info}  \n**Player:** {player_name}")
-    
-    # Button to go back to selection
-    if st.sidebar.button("↩️ New Selection"):
-        # Clear ONLY analysis_started - keep upload!
-        del st.session_state['analysis_started']
-        st.rerun()
-        
-    # Seitenleiste für Filter
-        
     # Verfügbare Daten aus geladenen CSVs
     available_dates = sorted(df['date'].unique(), reverse=True)
     date_filter = available_dates[0]  # Neuestes Datum
-    
-    # Date for delta comparison
-    default_compare_index = 1 if len(available_dates) >= 2 else 0
-    compare_date = st.sidebar.selectbox(
-        "Date for Delta Comparison:", 
-        available_dates, 
-        index=default_compare_index,
-        key="compare_date_select"
-    )
     
     # Filtere DataFrame nach Date (Guild ist bereits gefiltert durch get_final_df!)
     df_filtered = df[df['date'] == date_filter]
@@ -2217,339 +2992,35 @@ def main():
     characters_data = load_units_data()
     
     # ============================================================================
-    # TAB NAVIGATION - MUST BE BEFORE SIDEBAR FILTER RENDERING!
+    # TAB NAVIGATION - Button-based, clean and fast!
     # ============================================================================
-    # Initialize active_tab if not exists
-    if 'active_tab' not in st.session_state:
-        st.session_state.active_tab = "📋 Character Overview"
+    active_tab = show_tab_menu()
     
-    # Initialize navigation counter to force widget refresh only when deselected
-    if 'nav_counter' not in st.session_state:
-        st.session_state.nav_counter = 0
-    
-    # Tab Navigation Segmented Control with unique key
-    selected_tab = st.segmented_control(
-        "Navigation",
-        options=["📋 Character Overview", "📊 Character Stats", "🔟 Player Relics", 
-                 "🏐 Player Omicrons", "🎲 Player Speed Mods", "⚙️ Settings"],
-        default=st.session_state.active_tab,
-        key=f"main_navigation_{st.session_state.nav_counter}",
-        selection_mode="single",
-        label_visibility="collapsed"
+    # ============================================================================
+    # SIDEBAR - Clean function with all filters and controls
+    # ============================================================================
+    (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
+     role_filter, ability_classes_filter, filters_active) = show_sidebar(
+        df, guild_filter, data_info, player_name, available_dates, available_dates[1] if len(available_dates) >= 2 else available_dates[0]
     )
     
-    # Handle selection changes
-    if selected_tab is None or selected_tab == "":
-        # User deselected (clicked same tab) - increment counter to force widget refresh
-        st.session_state.nav_counter += 1
-        st.rerun()
-    elif selected_tab != st.session_state.active_tab:
-        # User selected a different tab - update WITHOUT incrementing counter (no widget refresh needed)
-        st.session_state.active_tab = selected_tab
-        st.rerun()
-    
-    # ============================================================================
-    # SIDEBAR FILTERS - NOW RENDERS WITH CORRECT active_tab
-    # ============================================================================
-    
-    # Dynamic filters with mutual influence
-    st.sidebar.markdown("---")  # Separator line
-    st.sidebar.markdown("**🎛️ Character Filter:**")
-    
-    # Initialize session state for filters
-    if 'combat_type_filter' not in st.session_state:
-        st.session_state.combat_type_filter = ['Character']
-    if 'key_relevance_filter' not in st.session_state:
-        st.session_state.key_relevance_filter = ['👍']  # Default: only Key Characters
-    if 'alignment_filter' not in st.session_state:
-        st.session_state.alignment_filter = []
-    if 'categories_filter' not in st.session_state:
-        st.session_state.categories_filter = []
-    if 'role_filter' not in st.session_state:
-        st.session_state.role_filter = []
-    if 'ability_classes_filter' not in st.session_state:
-        st.session_state.ability_classes_filter = []
-    
-    # Reset counter for unique keys
-    if 'filter_reset_counter' not in st.session_state:
-        st.session_state.filter_reset_counter = 0
-    
-    # Unique keys based on reset counter
-    reset_suffix = f"_{st.session_state.filter_reset_counter}"
-    
-    # Prüfe ob aktiver Tab ein Player-Tab ist (wo nur Key Relevance Filter wirkt)
-    is_player_tab = st.session_state.get('active_tab', '') in ["🔟 Player Relics", "🏐 Player Omicrons", "🎲 Player Speed Mods"]
-    
-    # CombatType Filter + Key Relevance Filter in one line
-    available_combat_types = sorted(df_filtered['CombatType'].unique())
-    
-    # In Player Tabs: Nur Key Relevance Filter anzeigen (volle Breite)
-    # In anderen Tabs: CombatType + Key Relevance nebeneinander
-    if is_player_tab:
-        # Key Relevance Filter allein (volle Breite)
-        key_relevance_filter = st.sidebar.segmented_control(
-            "Key Relevance",
-            options=['👍', '👎'],
-            default=st.session_state.get('key_relevance_filter', ['👍']),
-            key=f"key_relevance_segmented{reset_suffix}",
-            selection_mode="multi",
-            label_visibility="collapsed"
-        )
-        # Update session state only if value has changed
-        if key_relevance_filter != st.session_state.get('key_relevance_filter', ['👍']):
-            st.session_state.key_relevance_filter = key_relevance_filter
-        
-        # Setze combat_type_filter auf leere Liste (wird nicht verwendet in Player Tabs)
-        combat_type_filter = []
-    else:
-        # Normale Ansicht: CombatType + Key Relevance nebeneinander
-        col1, col2 = st.sidebar.columns([3, 2])
-        with col1:
-            # Segmented Control für CombatType
-            combat_type_filter = st.segmented_control(
-                "Combat Type",
-                options=available_combat_types,
-                default=st.session_state.get('combat_type_filter', ['Character']),
-                key=f"combat_type_segmented{reset_suffix}",
-                selection_mode="multi",
-                label_visibility="collapsed"
-            )
-            # Update session state only if value has changed
-            if combat_type_filter != st.session_state.get('combat_type_filter', ['Character']):
-                st.session_state.combat_type_filter = combat_type_filter
-        
-        with col2:
-            # Key Relevance Segmented Control (multi-select)
-            key_relevance_filter = st.segmented_control(
-                "Key Relevance",
-                options=['👍', '👎'],
-                default=st.session_state.get('key_relevance_filter', ['👍']),
-                key=f"key_relevance_segmented{reset_suffix}",
-                selection_mode="multi",
-                label_visibility="collapsed"
-            )
-            # Update session state only if value has changed
-            if key_relevance_filter != st.session_state.get('key_relevance_filter', ['👍']):
-                st.session_state.key_relevance_filter = key_relevance_filter
-    
-    # Filter DataFrame by CombatType (nur in Character Tabs)
-    if combat_type_filter:
-        df_filtered = df_filtered[df_filtered['CombatType'].isin(combat_type_filter)]
-    
-    # Alle anderen Filter NUR in Character Tabs anzeigen (nicht in Player Tabs)
-    if not is_player_tab:
-        # Filter characters_data to BaseIds that exist in current df_filtered
-        # This ensures only relevant options (e.g., only Ships) are shown in filters
-        available_base_ids = set(df_filtered['BaseId'].unique())
-        characters_data_filtered = [char for char in characters_data if char.get('base_id') in available_base_ids]
-        
-        # Collect all available options (only from units present in DataFrame)
-        all_alignments = sorted(list({char.get('alignment', '') for char in characters_data_filtered if char.get('alignment')}))
-        
-        # Alignment Filter (Segmented Control)
-        alignment_filter = st.sidebar.segmented_control(
-            "Alignment",
-            options=all_alignments,
-            default=st.session_state.get('alignment_filter', []),
-            key=f"alignment_segmented{reset_suffix}",
-            selection_mode="multi",
-            label_visibility="collapsed"
-        )
-        # Update session state nur wenn sich Wert geändert hat
-        if alignment_filter != st.session_state.get('alignment_filter', []):
-            st.session_state.alignment_filter = alignment_filter
-        
-        # Filtere Charaktere basierend auf aktueller Auswahl für nachfolgende Filter
-        filtered_chars_for_categories = characters_data_filtered
-        if alignment_filter:
-            filtered_chars_for_categories = [char for char in filtered_chars_for_categories if char.get('alignment') in alignment_filter]
-        
-        # Verfügbare Kategorien basierend auf Gesinnung
-        available_categories = sorted(list({cat for char in filtered_chars_for_categories for cat in char.get('categories', [])}))
-        
-        # Verfügbare Rollen basierend auf vorherigen Filtern (vor Kategorie berechnen)
-        filtered_chars_for_roles = filtered_chars_for_categories
-        roles_set = set()
-        for char in filtered_chars_for_roles:
-            role = char.get('role')
-            if role and role.strip():
-                if role != 'Unknown':  # "Unknown" wird nicht angezeigt
-                    roles_set.add(role)
-            else:  # Keine Rolle vorhanden
-                roles_set.add('?')
-        available_roles = sorted(list(roles_set))
-        
-        # Role Filter (Segmented Control) - now before Category
-        role_filter = st.sidebar.segmented_control(
-            "Role",
-            options=available_roles,
-            default=[role for role in st.session_state.get('role_filter', []) if role in available_roles],
-            key=f"role_segmented{reset_suffix}",
-            selection_mode="multi",
-            label_visibility="collapsed"
-        )
-        # Update session state nur wenn sich Wert geändert hat
-        if role_filter != st.session_state.get('role_filter', []):
-            st.session_state.role_filter = role_filter
-        
-        # Kategorie Filter (Multiselect) - jetzt nach Rolle
-        # Label + Checkbox in zwei Spalten
-        col_cat_label, col_cat_toggle = st.sidebar.columns([2, 2])
-        with col_cat_label:
-            st.markdown("**Categories:**")
-        with col_cat_toggle:
-            # Checkbox-Label dynamisch setzen basierend auf aktuellem Zustand
-            current_state = st.session_state.get('categories_use_and', False)
-            categories_use_and = st.checkbox(
-                "AND" if current_state else "OR",
-                value=current_state,
-                key=f"categories_and_toggle{reset_suffix}",
-                help="Checked: AND logic (all selected). Unchecked: OR logic (any selected)"
-            )
-            # Update session state und force rerun wenn geändert
-            if categories_use_and != current_state:
-                st.session_state.categories_use_and = categories_use_and
-                st.rerun()
-        
-        categories_filter = st.sidebar.multiselect(
-            "Categories",
-            options=available_categories,
-            default=[cat for cat in st.session_state.get('categories_filter', []) if cat in available_categories],
-            key=f"categories_multiselect{reset_suffix}",
-            label_visibility="collapsed"
-        )
-        # Update session state nur wenn sich Wert geändert hat
-        if categories_filter != st.session_state.get('categories_filter', []):
-            st.session_state.categories_filter = categories_filter
-        
-        # Filtere weiter für Fähigkeitsklassen (basierend auf Rolle und Kategorie)
-        filtered_chars_for_abilities = filtered_chars_for_categories
-        if role_filter:
-            filtered_chars_for_abilities = [char for char in filtered_chars_for_abilities if char.get('role') in role_filter]
-        if categories_filter:
-            filtered_chars_for_abilities = [char for char in filtered_chars_for_abilities 
-                                      if any(cat in char.get('categories', []) for cat in categories_filter)]
-        
-        # Verfügbare Fähigkeitsklassen basierend auf vorherigen Filtern
-        available_ability_classes = sorted(list({ac for char in filtered_chars_for_abilities for ac in char.get('ability_classes', [])}))
-        
-        # Fähigkeitsklasse Filter (Chips)
-        # Label + Checkbox in zwei Spalten
-        col_ac_label, col_ac_toggle = st.sidebar.columns([2, 2])
-        with col_ac_label:
-            st.markdown("**Ability classes:**")
-        with col_ac_toggle:
-            # Checkbox-Label dynamisch setzen basierend auf aktuellem Zustand
-            current_state = st.session_state.get('ability_classes_use_and', False)
-            ability_classes_use_and = st.checkbox(
-                "AND" if current_state else "OR",
-                value=current_state,
-                key=f"ability_classes_and_toggle{reset_suffix}",
-                help="Checked: AND logic (all selected). Unchecked: OR logic (any selected)"
-            )
-            # Update session state und force rerun wenn geändert
-            if ability_classes_use_and != current_state:
-                st.session_state.ability_classes_use_and = ability_classes_use_and
-                st.rerun()
-        
-        ability_classes_filter = st.sidebar.multiselect(
-            "Ability classes",
-            options=available_ability_classes,
-            default=[ac for ac in st.session_state.get('ability_classes_filter', []) if ac in available_ability_classes],
-            key=f"ability_classes_multiselect{reset_suffix}",
-            label_visibility="collapsed"
-        )
-        # Update session state nur wenn sich Wert geändert hat
-        if ability_classes_filter != st.session_state.get('ability_classes_filter', []):
-            st.session_state.ability_classes_filter = ability_classes_filter
-        
-        # Reset filters button (nur in Character Tabs)
-        if st.sidebar.button("🗑️ Reset all filters"):
-            # Increase reset counter for new widget keys
-            st.session_state.filter_reset_counter += 1
-            # Reset session state - Sidebar filters AND selected_character_tab2
-            # IMPORTANT: key_chars_filter is NOT reset!
-            st.session_state.combat_type_filter = []
-            st.session_state.alignment_filter = []
-            st.session_state.categories_filter = []
-            st.session_state.categories_use_and = False
-            st.session_state.role_filter = []
-            st.session_state.ability_classes_filter = []
-            st.session_state.ability_classes_use_and = False
-            # Delete selected_character_tab2 so it gets reinitialized
-            if 'selected_character_tab2' in st.session_state:
-                del st.session_state.selected_character_tab2
-            st.rerun()
-    else:
-        # In Player Tabs: Setze alle Filter auf leer (werden nicht angezeigt/verwendet)
-        alignment_filter = []
-        categories_filter = []
-        role_filter = []
-        ability_classes_filter = []
-    
-    # Lade character_relevance_data
+    # Lade Charakterdaten für Tab-Content
+    characters_data = load_units_data()
     relevance_dict, relic_rec_dict, notes_dict = load_character_relevance_data()
-    
-    # Lade relic_costs
     relic_costs = load_relic_costs()
     
-    # Filter anwenden
+    # Filter anwenden für gefilterte Character-Liste
     filtered_characters = apply_filters(
         characters_data, 
         alignment_filter, 
         categories_filter, 
         role_filter, 
         ability_classes_filter,
-        key_relevance_filter=st.session_state.key_relevance_filter,
+        key_relevance_filter=key_relevance_filter,
         relevance_dict=relevance_dict,
         categories_use_and=st.session_state.get('categories_use_and', False),
         ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
     )
-    
-    # Prüfe ob irgendwelche Filter aktiv sind (key_chars_filter wird NICHT als "Filter aktiv" gezählt)
-    filters_active = bool(alignment_filter or categories_filter or role_filter or ability_classes_filter)
-    
-    st.sidebar.markdown("---")  # Separator line
-    
-    # Character Filter for Tab 2
-    st.sidebar.markdown("**☯ Character Selection:**")
-    if filters_active:
-        if filtered_characters:
-            available_characters_tab2 = [(char['name'], char['base_id']) for char in filtered_characters]
-        else:
-            available_characters_tab2 = []  # Filter active but no matches
-    else:
-        available_characters_tab2 = [(char['name'], char['base_id']) for char in characters_data]
-    
-    character_names_tab2 = [name for name, base_id in available_characters_tab2]
-    
-    if character_names_tab2:
-        # Character Dropdown for Tab 2 - Key with reset_suffix so it gets reset
-        selected_character_tab2 = st.sidebar.selectbox(
-            "Character for Tab 2:",
-            character_names_tab2,
-            key=f"tab2_character_select{reset_suffix}"
-        )
-        
-        # Update Session State
-        if 'selected_character_tab2' not in st.session_state:
-            st.session_state.selected_character_tab2 = selected_character_tab2
-        else:
-            if st.session_state.selected_character_tab2 != selected_character_tab2:
-                st.session_state.selected_character_tab2 = selected_character_tab2
-    
-    # Player Uncheck Button at end of Sidebar
-    st.sidebar.markdown("---")
-    if st.sidebar.button("❌ Uncheck All", key="uncheck_all_btn", width='stretch'):
-        if 'player_base_global' in st.session_state:
-            # Get default_ally_code from session state
-            default_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
-            
-            # Uncheck all EXCEPT default_ally_code
-            st.session_state.player_base_global['Checked'] = (
-                st.session_state.player_base_global['AllyCode'].astype(str) == default_ally_code
-            )
-            st.rerun()
     
     # GLOBAL PLAYER_BASE in Session State - initialize ONCE!
     # This is the central data structure for ALL Player tabs
@@ -2595,15 +3066,17 @@ def main():
     # CONDITIONAL RENDERING - only active tab is executed!
     # Note: active_tab was already updated before sidebar rendering
     if st.session_state.active_tab == "📋 Character Overview":
-        show_character_overview(df_filtered, filtered_characters, characters_data, filters_active, st.session_state.key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
+        show_character_overview(df_filtered, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
     elif st.session_state.active_tab == "📊 Character Stats":
         show_analytics_tab(df_filtered, filtered_characters, characters_data, filters_active)
     elif st.session_state.active_tab == "🔟 Player Relics":
-        show_player_overview_tab(df, compare_date, st.session_state.key_relevance_filter, relevance_dict)
+        show_player_overview_tab(df, compare_date, key_relevance_filter, relevance_dict)
     elif st.session_state.active_tab == "🏐 Player Omicrons":
-        show_player_omicrons_tab(df, compare_date, st.session_state.key_relevance_filter, relevance_dict)
+        show_player_omicrons_tab(df, compare_date, key_relevance_filter, relevance_dict)
     elif st.session_state.active_tab == "🎲 Player Speed Mods":
-        show_player_speed_mods_tab(df, compare_date, st.session_state.key_relevance_filter, relevance_dict)
+        show_player_speed_mods_tab(df, compare_date, key_relevance_filter, relevance_dict)
+    elif st.session_state.active_tab == "🎯 Mod Distribution":
+        show_mod_sets_tab(df, compare_date, key_relevance_filter, relevance_dict)
     elif st.session_state.active_tab == "⚙️ Settings":
         show_settings_tab(df)
 
