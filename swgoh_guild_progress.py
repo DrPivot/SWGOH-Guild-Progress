@@ -803,8 +803,8 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
     
     char_overview = pd.DataFrame({
         'Character': [base_id_to_name.get(base_id, base_id) for base_id in base_ids],
-        'Player relic level': [player_relic_dict.get(base_id, None) for base_id in base_ids],
-        'Recommended level': [relic_rec_dict.get(base_id, None) if relic_rec_dict else None for base_id in base_ids],
+        'Player relic': [player_relic_dict.get(base_id, None) for base_id in base_ids],
+        'Recommended': [relic_rec_dict.get(base_id, None) if relic_rec_dict else None for base_id in base_ids],
         'Δ': [
             (rec - player if rec and player and rec > player else 0)
             for rec, player in zip(
@@ -813,7 +813,7 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
             )
         ],
         'Comment': [notes_dict.get(base_id, None) if notes_dict else None for base_id in base_ids],
-        'Count': char_stats['RelicLevel']['count'].astype(int),
+        'Guild': char_stats['RelicLevel']['count'].astype(int),
         'R9': char_stats['RelicLevel']['<lambda_0>'].astype(int),
         'R8': char_stats['RelicLevel']['<lambda_1>'].astype(int), 
         'R7': char_stats['RelicLevel']['<lambda_2>'].astype(int),
@@ -1742,7 +1742,7 @@ def show_player_overview_tab(df_guild, compare_date, key_relevance_filter, relev
     # Date columns as numbers (mark comparison date with 📍)
     for col in date_columns:
         label = f"📍 {col}" if col == compare_date else col
-        column_config[col] = st.column_config.NumberColumn(label, format='%d', width=120)
+        column_config[col] = st.column_config.NumberColumn(label, format='%d')
     
     # on_select Callback for Cell-Selection
     def on_relics_select():
@@ -1791,6 +1791,7 @@ def show_player_overview_tab(df_guild, compare_date, key_relevance_filter, relev
         width="content",
         height=1100,
         row_height=21,
+        column_order=("Name", "Δ", "Metric") + tuple(date_columns),
         column_config=column_config,
         selection_mode="single-cell",
         on_select=on_relics_select,
@@ -1923,10 +1924,10 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
         'Metric': st.column_config.TextColumn('Metric', width=110)
     }
     
-    # Datums-Spalten als Zahlen (Vergleichsdatum mit 📍 markieren)
+    # Date columns as numbers (mark comparison date with 📍)
     for col in date_columns:
         label = f"📍 {col}" if col == compare_date else col
-        column_config[col] = st.column_config.NumberColumn(label, format='%d', width=120)
+        column_config[col] = st.column_config.NumberColumn(label, format='%d')
     
     # on_select Callback für Cell-Selection
     def on_omicrons_select():
@@ -1975,6 +1976,7 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
         width="content",
         height=1100,
         row_height=21,
+        column_order=("Name", "Δ", "Metric") + tuple(date_columns),
         column_config=column_config,
         selection_mode="single-cell",
         on_select=on_omicrons_select,
@@ -2107,10 +2109,10 @@ def show_player_speed_mods_tab(df_guild, compare_date, key_relevance_filter, rel
         'Metric': st.column_config.TextColumn('Metric', width=110)
     }
     
-    # Datums-Spalten als Zahlen (Vergleichsdatum mit 📍 markieren)
+    # Date columns as numbers (mark comparison date with 📍)
     for col in date_columns:
         label = f"📍 {col}" if col == compare_date else col
-        column_config[col] = st.column_config.NumberColumn(label, format='%d', width=120)
+        column_config[col] = st.column_config.NumberColumn(label, format='%d')
        
     # on_select Callback für Cell-Selection
     def on_speed_mods_select():
@@ -2159,6 +2161,7 @@ def show_player_speed_mods_tab(df_guild, compare_date, key_relevance_filter, rel
         width="content",
         height=1100,
         row_height=21,
+        column_order=("Name", "Δ", "Metric") + tuple(date_columns),
         column_config=column_config,
         selection_mode="single-cell",
         on_select=on_speed_mods_select,
