@@ -8,6 +8,7 @@ import locale
 from datetime import datetime
 from io import StringIO
 import os
+import sys
 
 # Encryption (optional - nur wenn verschlüsselte CSVs vorhanden)
 try:
@@ -38,9 +39,7 @@ PLAYER_COLOR_PALETTE = [
 # Tab Names as Constants
 TAB_OVERVIEW = "📑 Overview"
 TAB_CHAR_STATS = "📊 Char Stats"
-TAB_RELIC_COUNT = "🔮 Relic Levels"
-TAB_OMICRON_COUNT = "⚙️ Omicrons"
-TAB_SPEED_MOD_COUNT = "🎲 Mods Speed"
+TAB_PROGRESS = "📈 Progress"
 TAB_MOD_DISTRIBUTION = "⚖️ Mod Distribution"
 TAB_INFO = "ℹ️ App-Info"
 
@@ -65,6 +64,9 @@ SLOT_KEY_ARROW = 'Arrow'
 SLOT_KEY_TRIANGLE = 'Triangle'
 SLOT_KEY_CIRCLE = 'Circle'
 SLOT_KEY_CROSS = 'Cross'
+
+# Combat Types (constant - nur Character und Ship)
+COMBAT_TYPES = ['Character', 'Ship']
 
 # ============================================================================
 # SETUP
@@ -364,10 +366,10 @@ def load_guild_data(guild_filter, selected_dates):
     return combined_df
 
 @st.cache_data
-def get_final_df(guild_filter, selected_dates, upload_csv_data=None, upload_date=None, upload_guild=None):
+def get_newest_df(guild_filter, selected_dates, upload_csv_data=None, upload_date=None, upload_guild=None):
     """
+    Lädt NEUESTEN Datenstand mit ALLEN Spalten (für Overview, Char Stats, Mod Distribution).
     Kombiniert gecachte Repository-Daten + optionalen Upload (MIT CACHING!).
-    Upload wird im Cache gespeichert - alle User der gleichen Gilde profitieren während App läuft.
     
     Args:
         guild_filter: Name der Gilde
@@ -377,7 +379,7 @@ def get_final_df(guild_filter, selected_dates, upload_csv_data=None, upload_date
         upload_guild: Optional - Gilde des Uploads (für Validierung)
     
     Returns:
-        DataFrame mit allen Daten (Repository + Upload falls vorhanden)
+        DataFrame mit neuestem Datenstand (alle Spalten inkl. Stats, Mods)
     """
     # Lade gecachte CSVs aus Repository
     df_cached = load_guild_data(guild_filter, tuple(selected_dates))
@@ -406,14 +408,90 @@ def get_final_df(guild_filter, selected_dates, upload_csv_data=None, upload_date
         
         # Kombiniere beide DataFrames
         df_upload = df_upload.copy()
-        # df_upload['guild'] = guild_filter   ### Nicht nötig, da nur Daten der gleichen Gilde hochgeladen werden können
         df_upload['date'] = upload_date if upload_date else datetime.now().strftime('%Y-%m-%d')
         
-        df_final = pd.concat([df_upload, df_cached], ignore_index=True)
+        df_combined = pd.concat([df_upload, df_cached], ignore_index=True)
     else:
-        df_final = df_cached
+        df_combined = df_cached
     
-    return df_final
+    # Extrahiere NEUESTEN Datenstand
+    newest_date = sorted(df_combined['date'].unique(), reverse=True)[0]
+    df_newest = df_combined[df_combined['date'] == newest_date].copy()
+    
+    return df_newest
+
+@st.cache_data
+def get_all_dates_df(guild_filter, selected_dates, upload_csv_data=None, upload_date=None, upload_guild=None):
+    """
+    Lädt ALLE Datenstände mit REDUZIERTEN Spalten (für Progress Tab).
+    Entfernt Stats/Mods (außer Speed) um Memory zu sparen.
+    
+    Args:
+        guild_filter: Name der Gilde
+        selected_dates: Tuple der ausgewählten Daten aus Repository
+        upload_csv_data: Optional - Upload-CSV als String (für Cache-Key)
+        upload_date: Optional - Datum des Uploads
+        upload_guild: Optional - Gilde des Uploads (für Validierung)
+    
+    Returns:
+        DataFrame mit allen Datenständen (reduzierte Spalten ohne Stats/Mods außer Speed)
+    """
+    # Lade gecachte CSVs aus Repository
+    df_cached = load_guild_data(guild_filter, tuple(selected_dates))
+    
+    if df_cached is None:
+        return None
+    
+    # Füge Upload hinzu (falls übergeben UND Gilde stimmt überein!)
+    if upload_csv_data is not None and upload_guild == guild_filter:
+        # Parse Upload-CSV
+        df_upload = pd.read_csv(StringIO(upload_csv_data))
+        
+        # Droppe UnitId-Spalte (wird nicht verwendet, spart Memory)
+        if 'UnitId' in df_upload.columns:
+            df_upload = df_upload.drop(columns=['UnitId'])
+        
+        # Validierung: Spieler-Übereinstimmung
+        if 'AllyCode' in df_upload.columns and 'AllyCode' in df_cached.columns:
+            upload_players = set(df_upload['AllyCode'].unique())
+            cached_players = set(df_cached['AllyCode'].unique())
+            common_players = upload_players & cached_players
+            
+            if not common_players:
+                # KEINE gemeinsamen Spieler = fremde Gilde → Return empty DataFrame
+                return pd.DataFrame()
+        
+        # Kombiniere beide DataFrames
+        df_upload = df_upload.copy()
+        df_upload['date'] = upload_date if upload_date else datetime.now().strftime('%Y-%m-%d')
+        
+        df_combined = pd.concat([df_upload, df_cached], ignore_index=True)
+    else:
+        df_combined = df_cached
+    
+    # Definiere benötigte Spalten für Progress Tab (und zukünftige Progress-KPIs!)
+    progress_columns = [
+        # Identifier
+        'AllyCode', 'Name', 'BaseId', 'date', 'CombatType', 'Alignment',
+        # Basic Stats
+        'Stars', 'Level', 'GearLevel', 'Power',
+        # Zetas & Omicrons
+        'ZetaCount', 'ZetaLead', 'OmiCount', 'TWOmiCount', 'GACOmiCount', 'TBOmiCount', 'CQOmiCount',
+        # Ultimate & Relic
+        'Ultimate', 'RelicLevel',
+        # Speed Mods
+        'Speed10', 'Speed15', 'Speed20', 'Speed25',
+        # Mod Counts
+        'ModCount', 'ModSixCount', 'PlusSpeed',
+        # Speed Stat (AUSNAHME - einziger Stat-Wert!)
+        'Speed'
+    ]
+    
+    # Filtere nur existierende Spalten (falls CSV-Format unterschiedlich)
+    available_columns = [col for col in progress_columns if col in df_combined.columns]
+    df_all_dates = df_combined[available_columns].copy()
+    
+    return df_all_dates
 
 def show_start_screen():
     """Zeigt Startbildschirm mit Guild-Auswahl, Date-Auswahl und CSV-Upload."""
@@ -580,6 +658,15 @@ def show_start_screen():
                     del st.session_state['upload_validation_warnings']
                 if 'upload_guild_mismatch' in st.session_state:
                     del st.session_state['upload_guild_mismatch']
+                
+                # LÖSCHE gecachte DataFrames - müssen neu geladen werden ohne Upload!
+                if 'df_newest_cached' in st.session_state:
+                    del st.session_state['df_newest_cached']
+                if 'df_all_dates_cached' in st.session_state:
+                    del st.session_state['df_all_dates_cached']
+                if 'player_base_global' in st.session_state:
+                    del st.session_state['player_base_global']
+                
                 st.rerun()
         
         uploaded_file = st.file_uploader(
@@ -635,6 +722,14 @@ def show_start_screen():
                 st.session_state.uploaded_csv_guild = upload_guild_name  # Speichere Guild-Name aus Datei!
                 st.session_state.upload_validation_warnings = validation_warnings
                 
+                # LÖSCHE gecachte DataFrames - müssen neu geladen werden mit Upload!
+                if 'df_newest_cached' in st.session_state:
+                    del st.session_state['df_newest_cached']
+                if 'df_all_dates_cached' in st.session_state:
+                    del st.session_state['df_all_dates_cached']
+                if 'player_base_global' in st.session_state:
+                    del st.session_state['player_base_global']  # Auch player_base neu initialisieren!
+                
                 # Zeige Warnings falls vorhanden
                 for warning in validation_warnings:
                     st.warning(warning)
@@ -660,8 +755,41 @@ def show_start_screen():
                 
                 if st.button("▶️ Start Analysis", type="primary", width='stretch', disabled=button_disabled):
                     if 'selected_dates' in st.session_state and st.session_state.selected_dates:
-                        st.session_state.analysis_started = True
-                        st.rerun()
+                        # Bereite Upload-Daten vor (falls vorhanden)
+                        upload_csv_data = None
+                        upload_date = None
+                        upload_guild = None
+                        if 'uploaded_csv_df' in st.session_state:
+                            upload_csv_data = st.session_state.get('uploaded_csv_data', None)
+                            upload_date = st.session_state.get('uploaded_csv_date', datetime.now().strftime('%Y-%m-%d'))
+                            upload_guild = st.session_state.get('uploaded_csv_guild', None)
+                        
+                        # Lade BEIDE DataFrames EINMALIG beim Start
+                        df_newest_temp = get_newest_df(st.session_state.selected_guild, tuple(st.session_state.selected_dates), upload_csv_data, upload_date, upload_guild)
+                        df_all_dates_temp = get_all_dates_df(st.session_state.selected_guild, tuple(st.session_state.selected_dates), upload_csv_data, upload_date, upload_guild)
+                        
+                        if df_newest_temp is not None and not df_newest_temp.empty and df_all_dates_temp is not None:
+                            # Ermittle available dates aus df_all_dates
+                            available_dates_list = sorted(df_all_dates_temp['date'].unique(), reverse=True)
+                            newest_date = available_dates_list[0]
+                            
+                            # Player Name lookup aus df_newest
+                            default_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
+                            player_name_match = df_newest_temp[df_newest_temp['AllyCode'].astype(str) == default_ally_code]['Name'].unique()
+                            player_name = player_name_match[0] if len(player_name_match) > 0 else default_ally_code
+                            
+                            # Speichere BEIDE DataFrames in Session State (für main())
+                            st.session_state.df_newest_cached = df_newest_temp
+                            st.session_state.df_all_dates_cached = df_all_dates_temp
+                            st.session_state.available_dates_cached = available_dates_list
+                            st.session_state.player_name_cached = player_name
+                            st.session_state.newest_date_cached = newest_date
+                            
+                            # Starte Analysis
+                            st.session_state.analysis_started = True
+                            st.rerun()
+                        else:
+                            st.error("❌ Error loading data for analysis!")
                     else:
                         st.warning("⚠️ Please select at least one date from the repository!")
 
@@ -705,7 +833,7 @@ def apply_filters(characters_data, alignment_filter, categories_filter, role_fil
     
     return filtered
 
-def show_character_overview(df, filtered_characters, characters_data, filters_active, key_relevance_filter=None, relevance_dict=None, relic_rec_dict=None, notes_dict=None, relic_costs=None):
+def show_character_overview(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter=None, relevance_dict=None, relic_rec_dict=None, notes_dict=None, relic_costs=None):
     # === OVERVIEW zeigt Characters UND/ODER Ships basierend auf Combat Type Filter! ===
     # filtered_base_ids aus Session State enthält nur Characters (für Mod Distribution)
     # Overview braucht separate Logik für Ships und muss Combat Type Filter beachten!
@@ -723,7 +851,7 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
     filtered_base_ids_ships = []
     if show_ships:
         relevance_dict = relevance_dict or {}
-        available_ships = set(df[df['CombatType'] == 'Ship']['BaseId'].unique())
+        available_ships = set(df_newest[df_newest['CombatType'] == 'Ship']['BaseId'].unique())
         
         # Filtere Ships basierend auf Key Relevance Filter
         if key_relevance_filter:
@@ -746,9 +874,9 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
     
     # Filtere DataFrame
     if all_filtered_base_ids:
-        df_filtered = df[df['BaseId'].isin(all_filtered_base_ids)]
+        df_filtered = df_newest[df_newest['BaseId'].isin(all_filtered_base_ids)]
     else:
-        df_filtered = df[df['BaseId'].isin([])]
+        df_filtered = df_newest[df_newest['BaseId'].isin([])]
     
     if df_filtered.empty:
         st.warning("❌ No data found for the selected filters.")
@@ -788,11 +916,11 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
     # Gruppierung nach BaseId (Charaktername) und Berechnung der Kennzahlen
     char_stats = df_filtered.groupby('BaseId').agg({
         'RelicLevel': [
+            lambda x: sum(x == 10),   # R10
             lambda x: sum(x == 9),    # R9
             lambda x: sum(x == 8),    # R8  
             lambda x: sum(x == 7),    # R7
-            lambda x: sum(x == 6),    # R6
-            lambda x: sum(x < 6),     # <R6
+            lambda x: sum(x < 7),     # <R7
             'count'                   # Total count
         ]
     }).round(0)  # Keine Nachkommastellen
@@ -814,15 +942,12 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
         ],
         'Comment': [notes_dict.get(base_id, None) if notes_dict else None for base_id in base_ids],
         'Guild': char_stats['RelicLevel']['count'].astype(int),
-        'R9': char_stats['RelicLevel']['<lambda_0>'].astype(int),
-        'R8': char_stats['RelicLevel']['<lambda_1>'].astype(int), 
-        'R7': char_stats['RelicLevel']['<lambda_2>'].astype(int),
-        'R6': char_stats['RelicLevel']['<lambda_3>'].astype(int),
-        '<R6': char_stats['RelicLevel']['<lambda_4>'].astype(int)
+        'R10': char_stats['RelicLevel']['<lambda_0>'].astype(int),
+        'R9': char_stats['RelicLevel']['<lambda_1>'].astype(int), 
+        'R8': char_stats['RelicLevel']['<lambda_2>'].astype(int),
+        'R7': char_stats['RelicLevel']['<lambda_3>'].astype(int),
+        '<R7': char_stats['RelicLevel']['<lambda_4>'].astype(int)
     })
-    
-    # Sortierung? Aplhabetisch nach Character (wie übergeben) oder nach irgendeiner Spalte? => tbd
-    # char_overview = char_overview.sort_values('xxx', ascending=False)
     
     # Berechne Relic-Kosten (vor reset_index, da BaseId noch im Index ist!)
     if relic_costs:
@@ -834,91 +959,90 @@ def show_character_overview(df, filtered_characters, characters_data, filters_ac
     char_overview = char_overview.reset_index(drop=True)
     
     # Zwei-Spalten-Layout: Character Overview (links) + Relic Costs (rechts)
-    col_chars, col_costs = st.columns([2, 2], gap="medium")
-    
-    with col_chars:
+    with st.container(horizontal=True, gap="medium"):
         # Tabelle anzeigen mit kleiner Zeilenhöhe für mehr sichtbare Zeilen
         # row_height=21 ermöglicht ca. 50 Zeilen bei 1140px Container-Höhe
         st.dataframe(char_overview, hide_index=True, width="content", height=1100, row_height=21)
-    
-    with col_costs:
-        if total_costs:
-            # Material-Namen für Anzeige (lesbar)
-            material_display_names = {
-                'fragmented_signal_data': 'Fragmented Signal Data',
-                'incomplete_signal_data': 'Incomplete Signal Data',
-                'flawed_signal_data': 'Flawed Signal Data',
-                'corrupted_signal_data': 'Corrupted Signal Data',
-                'carbonite_circuit_board': 'Carbonite Circuit Board',
-                'bronzium_wiring': 'Bronzium Wiring',
-                'chromium_transistor': 'Chromium Transistor',
-                'aurodium_heatsink': 'Aurodium Heatsink',
-                'electrium_conductor': 'Electrium Conductor',
-                'zinbiddle_card': 'Zinbiddle Card',
-                'impulse_detector': 'Impulse Detector',
-                'aeromagnifier': 'Aeromagnifier',
-                'gyrda_keypad': 'Gyrda Keypad',
-                'droid_brain': 'Droid Brain',
-                'coaxial_servomotors': 'Coaxial Servomotors'
-            }
-            
-            # Kategorisierung: Signal Data vs Scrap Materials
-            signal_data_keys = [
-                'fragmented_signal_data', 'incomplete_signal_data', 
-                'flawed_signal_data', 'corrupted_signal_data'
-            ]
-            scrap_material_keys = [
-                'carbonite_circuit_board', 'bronzium_wiring', 'chromium_transistor',
-                'aurodium_heatsink', 'electrium_conductor', 'zinbiddle_card',
-                'impulse_detector', 'aeromagnifier', 'gyrda_keypad',
-                'droid_brain', 'coaxial_servomotors'
-            ]
-            
-            # Erstelle separate Listen (nur Materialien mit Wert > 0)
-            signal_data = []
-            scrap_materials = []
-            
-            for material_key, total in total_costs.items():
-                if total > 0:
-                    data = {
-                        'Material': material_display_names[material_key],
-                        'Total': total
-                    }
-                    if material_key in signal_data_keys:
-                        signal_data.append(data)
-                    elif material_key in scrap_material_keys:
-                        scrap_materials.append(data)
-            
-            if signal_data or scrap_materials:
-                # Signal Data Tabelle
-                if signal_data:
-                    signal_df = pd.DataFrame(signal_data)
-                    st.markdown('<h4 style="margin-top: 0; margin-bottom: 10px;">📡 Signal Data</h4>', unsafe_allow_html=True)
-                    st.dataframe(
-                        signal_df,
-                        hide_index=True,
-                        width="content",
-                        height=150,
-                        row_height=24
-                    )
+        
+        # Relic Costs in vertikalem Container (Überschriften + Tabellen übereinander)
+        with st.container():
+            if total_costs:
+                # Material-Namen für Anzeige (lesbar)
+                material_display_names = {
+                    'fragmented_signal_data': 'Fragmented Signal Data',
+                    'incomplete_signal_data': 'Incomplete Signal Data',
+                    'flawed_signal_data': 'Flawed Signal Data',
+                    'corrupted_signal_data': 'Corrupted Signal Data',
+                    'carbonite_circuit_board': 'Carbonite Circuit Board',
+                    'bronzium_wiring': 'Bronzium Wiring',
+                    'chromium_transistor': 'Chromium Transistor',
+                    'aurodium_heatsink': 'Aurodium Heatsink',
+                    'electrium_conductor': 'Electrium Conductor',
+                    'zinbiddle_card': 'Zinbiddle Card',
+                    'impulse_detector': 'Impulse Detector',
+                    'aeromagnifier': 'Aeromagnifier',
+                    'gyrda_keypad': 'Gyrda Keypad',
+                    'droid_brain': 'Droid Brain',
+                    'coaxial_servomotors': 'Coaxial Servomotors'
+                }
                 
-                # Scrap Materials Tabelle
-                if scrap_materials:
-                    scrap_df = pd.DataFrame(scrap_materials)
-                    st.markdown('<h4 style="margin-top: 20px; margin-bottom: 10px;">⚙️ Scrap Materials</h4>', unsafe_allow_html=True)
-                    st.dataframe(
-                        scrap_df,
-                        hide_index=True,
-                        width="content",
-                        height=320,
-                        row_height=24
-                    )
+                # Kategorisierung: Signal Data vs Scrap Materials
+                signal_data_keys = [
+                    'fragmented_signal_data', 'incomplete_signal_data', 
+                    'flawed_signal_data', 'corrupted_signal_data'
+                ]
+                scrap_material_keys = [
+                    'carbonite_circuit_board', 'bronzium_wiring', 'chromium_transistor',
+                    'aurodium_heatsink', 'electrium_conductor', 'zinbiddle_card',
+                    'impulse_detector', 'aeromagnifier', 'gyrda_keypad',
+                    'droid_brain', 'coaxial_servomotors'
+                ]
+                
+                # Erstelle separate Listen (nur Materialien mit Wert > 0)
+                signal_data = []
+                scrap_materials = []
+                
+                for material_key, total in total_costs.items():
+                    if total > 0:
+                        data = {
+                            'Material': material_display_names[material_key],
+                            'Total': total
+                        }
+                        if material_key in signal_data_keys:
+                            signal_data.append(data)
+                        elif material_key in scrap_material_keys:
+                            scrap_materials.append(data)
+                
+                if signal_data or scrap_materials:
+                    # Signal Data Tabelle
+                    if signal_data:
+                        signal_df = pd.DataFrame(signal_data)
+                        st.markdown('<h4 style="margin-top: 0; margin-bottom: 10px;">📡 Signal Data</h4>', unsafe_allow_html=True)
+                        st.dataframe(
+                            signal_df,
+                            hide_index=True,
+                            width="content",
+                            height=150,
+                            row_height=24
+                        )
+                    
+                    # Scrap Materials Tabelle
+                    if scrap_materials:
+                        scrap_df = pd.DataFrame(scrap_materials)
+                        st.markdown('<h4 style="margin-top: 20px; margin-bottom: 10px;">⚙️ Scrap Materials</h4>', unsafe_allow_html=True)
+                        st.dataframe(
+                            scrap_df,
+                            hide_index=True,
+                            width="content",
+                            height=320,
+                            row_height=24
+                        )
+                else:
+                    st.info("✅ No upgrades needed!")
             else:
-                st.info("✅ No upgrades needed!")
-        else:
-            st.warning("⚠️ Relic cost data not available")
+                st.warning("⚠️ Relic cost data not available")
 
-def show_analytics_tab(df, filtered_characters, characters_data, filters_active):
+def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_active):
     """Tab 2 - Character Stats mit Multi-Player Vergleich via Checkboxen."""
     
     # Hole player_base DIREKT aus Session State (nicht als Parameter!)
@@ -950,7 +1074,7 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
         return
     
     # Filter data for the selected character
-    df_character = df[df['BaseId'] == selected_base_id].copy()
+    df_character = df_newest[df_newest['BaseId'] == selected_base_id].copy()
     
     if df_character.empty:
         st.warning(f"❌ No data found for {selected_character_name}.")
@@ -1118,15 +1242,15 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
     display_df = df_character[display_columns].copy()
     display_df = display_df.sort_values('Speed', ascending=False)  # Nach Speed sortieren
     
-    # Merge mit player_base um Checked-Status und PlayerColor zu bekommen
-    display_df = display_df.merge(
-        player_base[['Name', 'Checked', 'PlayerColor']], 
-        on='Name', 
-        how='left'
-    )
+    # OPTIMIERT: Index-basiertes Mapping statt teurer merge (500ms → ~5ms)
+    # Erstelle Dicts für schnelle Lookups (O(1) statt O(n) merge)
+    player_base_indexed = player_base.set_index('Name')
+    name_to_checked = player_base_indexed['Checked'].to_dict()
+    name_to_color = player_base_indexed['PlayerColor'].to_dict()
     
-    # Erstelle Mapping für Styling
-    name_to_color = dict(zip(display_df['Name'], display_df['PlayerColor']))
+    # Füge Checked/Color via map hinzu (viel schneller als merge)
+    display_df['Checked'] = display_df['Name'].map(name_to_checked).fillna(False)
+    display_df['PlayerColor'] = display_df['Name'].map(name_to_color).fillna('#CCCCCC')
     
     # Spalte "Name" in "Player" umbenennen für Tab 2
     display_df = display_df.rename(columns={'Name': 'Player'})
@@ -1215,6 +1339,8 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
                     st.session_state.player_base_global['Name'] == player_name, 
                     'Checked'
                 ] = not current_state
+                
+                print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Callback: Player toggled in Char Stats", file=sys.stderr)
     
     # Tabelle mit on_select
     st.dataframe(
@@ -1230,167 +1356,38 @@ def show_analytics_tab(df, filtered_characters, characters_data, filters_active)
     )
 
 @st.cache_data
-def get_all_relic_counts_per_date(df_guild, player_base, key_relevance_filter=None, relevance_dict=None):
+def get_all_player_metrics_per_date(df_all_dates, player_base, key_relevance_filter=None, relevance_dict=None):
     """
-    Berechnet ALLE Relic-Counts (R6-R10) pro Spieler und Datum (mit Caching).
+    Berechnet ALLE Metriken (Relics, Omicrons, Speed Mods) in einem DataFrame (mit Caching).
     Wird nur einmal pro Guild berechnet, dann für alle User geteilt.
     
     Args:
-        df_guild: Gefilterte Daten für diese Gilde (aus Cache)
+        df_all_dates: Gefilterte Daten für diese Gilde (alle Datenstände, reduzierte Spalten)
         player_base: DataFrame mit [AllyCode, Name] - einheitliche Spielerliste
         key_relevance_filter: Liste ['👍', '👎'] für Key/Non-Key Character Filter
         relevance_dict: Dict mit {base_id: {'is_key': True/False}}
     
     Returns:
-        Dict[date, DataFrame]: {date: DataFrame mit [AllyCode, Name, R6, R7, R8, R9, R10]}
+        DataFrame mit Spalten:
+        - AllyCode, Name
+        - {date}_R6, {date}_R7, {date}_R8, {date}_R9, {date}_R10
+        - {date}_TWOmiCount, {date}_GACOmiCount, {date}_TBOmiCount, {date}_CQOmiCount
+        - {date}_Speed10, {date}_Speed15, {date}_Speed20, {date}_Speed25
+        - {date}_Mod6
     """
-    available_dates = sorted(df_guild['date'].unique(), reverse=True)
+    available_dates = sorted(df_all_dates['date'].unique(), reverse=True)
     
-    result = {}
+    # Start mit player_base (AllyCode, Name)
+    result = player_base.copy()
+    
+    # Für jedes Datum: Füge alle Metrik-Spalten hinzu
     for date in available_dates:
-        df_date = df_guild[df_guild['date'] == date]
-        
-        # Zähle jedes Relic-Level separat - für alle Spieler in player_base
-        player_counts = []
-        for _, player_row in player_base.iterrows():
-            ally_code = player_row['AllyCode']
-            player_name = player_row['Name']
-            
-            df_player = df_date[df_date['AllyCode'] == ally_code]
-            
-            if not df_player.empty:
-                # Nur Characters (keine Ships)
-                df_chars = df_player[df_player['CombatType'] == 'Character']
-                
-                # Wende Key Relevance Filter an (wenn aktiv)
-                if key_relevance_filter and relevance_dict:
-                    if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-                        # Nur Key Characters (key_character == 'yes')
-                        key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'yes']
-                        df_chars = df_chars[df_chars['BaseId'].isin(key_base_ids)]
-                    elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-                        # Nur Non-Key Characters (key_character == 'no')
-                        non_key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'no']
-                        df_chars = df_chars[df_chars['BaseId'].isin(non_key_base_ids)]
-                    # Wenn beide oder keines: alle Characters
-                
-                counts = {
-                    'AllyCode': ally_code,
-                    'Name': player_name,
-                    'R10': (df_chars['RelicLevel'] == 10).sum(),
-                    'R9': (df_chars['RelicLevel'] == 9).sum(),
-                    'R8': (df_chars['RelicLevel'] == 8).sum(),
-                    'R7': (df_chars['RelicLevel'] == 7).sum(),
-                    'R6': (df_chars['RelicLevel'] == 6).sum()
-                }
-            else:
-                # Spieler nicht in diesem Datum - None (nicht 0!)
-                counts = {
-                    'AllyCode': ally_code,
-                    'Name': player_name,
-                    'R10': None, 'R9': None, 'R8': None, 'R7': None, 'R6': None
-                }
-            player_counts.append(counts)
-        
-        result[date] = pd.DataFrame(player_counts)
-    
-    return result
-
-def calculate_player_relic_overview(df_guild, player_base, relic_levels, compare_date, key_relevance_filter=None, relevance_dict=None):
-    """
-    Berechnet Relic-Overview basierend auf gecachten Counts (OHNE eigenes Caching).
-    Schnell (~10ms) weil nur Summierung gecachter Daten.
-    
-    Args:
-        df_guild: Gefilterte Daten für diese Gilde (aus Cache)
-        player_base: DataFrame mit [AllyCode, Name] - einheitliche Spielerliste
-        relic_levels: Liste der Relic-Levels zum Zählen (z.B. [8, 9, 10])
-        compare_date: Datum für Delta-Vergleich
-        key_relevance_filter: Liste ['👍', '👎'] für Key/Non-Key Character Filter
-        relevance_dict: Dict mit {base_id: {'is_key': True/False}}
-    
-    Returns:
-        Tuple: (player_overview, date_columns, available_dates)
-    """
-    # SKIP wenn nur Styling-Änderung (Checkbox geklickt)
-    if not st.session_state.get('recalculate', True):
-        # Hole gecachtes Ergebnis aus Session State
-        if 'player_overview_relics' in st.session_state:
-            # Dummy return - wird nicht verwendet, da player_overview bereits in Session State
-            return st.session_state.player_overview_relics, [], []
-    
-    # Hole gecachte Counts (nur einmal pro Guild berechnet!)
-    counts_per_date = get_all_relic_counts_per_date(df_guild, player_base, key_relevance_filter, relevance_dict)
-    
-    available_dates = sorted(counts_per_date.keys(), reverse=True)
-    newest_date = available_dates[0]
-    
-    # Starte mit Spielerliste aus player_base (nicht aus counts!)
-    player_overview = player_base.copy()
-    
-    # Für jedes Datum: Summiere die ausgewählten Relic-Levels
-    date_columns = []
-    relic_cols = [f'R{r}' for r in relic_levels]
-    
-    for i, date in enumerate(available_dates):
-        df_date_counts = counts_per_date[date]
-        
-        # Summiere nur die gewählten Relic-Levels - aber nur wenn nicht alle None sind!
-        # skipna=False bedeutet: wenn irgendein Wert None ist, bleibt das Ergebnis None
-        df_date_counts['RelicCount'] = df_date_counts[relic_cols].sum(axis=1, skipna=False)
-        
-        col_name = date
-        date_columns.append(col_name)
-        
-        player_overview = player_overview.merge(
-            df_date_counts[['AllyCode', 'RelicCount']],
-            on='AllyCode',
-            how='left'
-        )
-        player_overview = player_overview.rename(columns={'RelicCount': col_name})
-        
-        # Alle Spalten als Int64 (erlaubt None für fehlende Spieler)
-        player_overview[col_name] = player_overview[col_name].astype('Int64')
-    
-    # Berechne Delta nur wenn beide Werte vorhanden sind
-    if compare_date in available_dates and compare_date != newest_date:
-        compare_col = compare_date
-        player_overview['Δ'] = player_overview.apply(
-            lambda row: row[date_columns[0]] - row[compare_col] 
-            if pd.notna(row[date_columns[0]]) and pd.notna(row[compare_col]) else None,
-            axis=1
-        )
-    else:
-        player_overview['Δ'] = None
-    
-    return player_overview, date_columns, available_dates
-
-@st.cache_data
-def get_all_omicron_counts_per_date(df_guild, player_base, key_relevance_filter=None, relevance_dict=None):
-    """
-    Berechnet ALLE Omicron-Counts pro Spieler und Datum (mit Caching).
-    Wird nur einmal pro Guild berechnet.
-    
-    Args:
-        df_guild: Gefilterte Daten für diese Gilde
-        player_base: DataFrame mit [AllyCode, Name] - einheitliche Spielerliste
-        key_relevance_filter: Liste ['👍', '👎'] für Key/Non-Key Character Filter
-        relevance_dict: Dict mit {base_id: {'is_key': True/False}}
-    
-    Returns:
-        Dict[date, DataFrame]: {date: DataFrame mit [AllyCode, Name, TWOmiCount, GACOmiCount, TBOmiCount, CQOmiCount]}
-    """
-    available_dates = sorted(df_guild['date'].unique(), reverse=True)
-    omicron_cols = ['TWOmiCount', 'GACOmiCount', 'TBOmiCount', 'CQOmiCount']
-    
-    result = {}
-    for date in available_dates:
-        df_date = df_guild[df_guild['date'] == date]
+        df_date = df_all_dates[df_all_dates['date'] == date]
         
         # Nur Characters (keine Ships)
         df_chars = df_date[df_date['CombatType'] == 'Character']
         
-        # Wende Key Relevance Filter an (wenn aktiv)
+        # Wende Key Relevance Filter an (wenn aktiv) - nur einmal pro Datum!
         if key_relevance_filter and relevance_dict:
             if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
                 # Nur Key Characters (key_character == 'yes')
@@ -1402,503 +1399,280 @@ def get_all_omicron_counts_per_date(df_guild, player_base, key_relevance_filter=
                 df_chars = df_chars[df_chars['BaseId'].isin(non_key_base_ids)]
             # Wenn beide oder keines: alle Characters
         
-        # Für alle Spieler in player_base
-        player_counts = []
-        for _, player_row in player_base.iterrows():
-            ally_code = player_row['AllyCode']
-            player_name = player_row['Name']
-            
-            df_player = df_chars[df_chars['AllyCode'] == ally_code]
-            
-            if not df_player.empty:
-                counts = {
-                    'AllyCode': ally_code,
-                    'Name': player_name,
-                    **{col: df_player[col].sum() for col in omicron_cols}
-                }
-            else:
-                # Spieler nicht in diesem Datum - None (nicht 0!)
-                counts = {
-                    'AllyCode': ally_code,
-                    'Name': player_name,
-                    **{col: None for col in omicron_cols}
-                }
-            player_counts.append(counts)
+        # RELICS: Zähle jedes Relic-Level separat
+        for relic_level in [6, 7, 8, 9, 10]:
+            col_name = f'{date}_R{relic_level}'
+            relic_counts = df_chars[df_chars['RelicLevel'] == relic_level].groupby('AllyCode').size()
+            result[col_name] = result['AllyCode'].map(relic_counts)
         
-        result[date] = pd.DataFrame(player_counts)
+        # OMICRONS: Summiere jeden Omicron-Typ
+        for omicron_col in ['TWOmiCount', 'GACOmiCount', 'TBOmiCount', 'CQOmiCount']:
+            col_name = f'{date}_{omicron_col}'
+            omicron_sums = df_chars.groupby('AllyCode')[omicron_col].sum()
+            result[col_name] = result['AllyCode'].map(omicron_sums)
+        
+        # SPEED MODS: Summiere jeden Speed-Threshold
+        for speed_col in ['Speed10', 'Speed15', 'Speed20', 'Speed25']:
+            col_name = f'{date}_{speed_col}'
+            speed_sums = df_chars.groupby('AllyCode')[speed_col].sum()
+            result[col_name] = result['AllyCode'].map(speed_sums)
+        
+        # MOD6: Summiere ModSixCount (6-Dot Mods)
+        col_name = f'{date}_Mod6'
+        mod6_sums = df_chars.groupby('AllyCode')['ModSixCount'].sum()
+        result[col_name] = result['AllyCode'].map(mod6_sums)
     
     return result
 
-def calculate_player_omicron_overview(df_guild, player_base, omicron_columns, compare_date, key_relevance_filter=None, relevance_dict=None):
-    """
-    Berechnet Omicron-Overview basierend auf gecachten Counts (OHNE eigenes Caching).
+def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevance_dict):
+    """Progress Tab - konsolidierte Ansicht für Relics, Omicrons und Speed Mods."""
     
-    Args:
-        df_guild: Gefilterte Daten für diese Gilde
-        player_base: DataFrame mit [AllyCode, Name] - einheitliche Spielerliste
-        omicron_columns: Liste der Omicron-Spalten (z.B. ['TWOmiCount', 'GACOmiCount'])
-        compare_date: Datum für Delta-Vergleich
-        key_relevance_filter: Liste ['👍', '👎'] für Key/Non-Key Character Filter
-        relevance_dict: Dict mit {base_id: {'is_key': True/False}}
+    # Callback für Radio Button
+    def on_metric_type_change():
+        """Callback um Session State sofort zu aktualisieren."""
+        st.session_state.progress_metric_type = st.session_state.progress_metric_radio
     
-    Returns:
-        Tuple: (player_overview, date_columns, available_dates)
-    """
-    # SKIP wenn nur Styling-Änderung (Checkbox geklickt)
-    if not st.session_state.get('recalculate', True):
-        if 'player_overview_omicrons' in st.session_state:
-            return st.session_state.player_overview_omicrons, [], []
-    
-    # Hole gecachte Counts
-    counts_per_date = get_all_omicron_counts_per_date(df_guild, player_base, key_relevance_filter, relevance_dict)
-    
-    available_dates = sorted(counts_per_date.keys(), reverse=True)
-    newest_date = available_dates[0]
-       
-    # Starte mit Spielerliste aus player_base (nicht aus counts!)
-    player_overview = player_base.copy()
-    
-    # Für jedes Datum: Summiere die ausgewählten Omicron-Spalten
-    date_columns = []
-    for i, date in enumerate(available_dates):
-        df_date_counts = counts_per_date[date]
-        
-        # Summiere nur die gewählten Omicron-Typen - aber nur wenn nicht alle None sind!
-        df_date_counts['OmicronCount'] = df_date_counts[omicron_columns].sum(axis=1, skipna=False)
-        
-        col_name = date
-        date_columns.append(col_name)
-        
-        player_overview = player_overview.merge(
-            df_date_counts[['AllyCode', 'OmicronCount']],
-            on='AllyCode',
-            how='left'
-        )
-        player_overview = player_overview.rename(columns={'OmicronCount': col_name})
-        
-        # Alle Spalten als Int64 (erlaubt None für fehlende Spieler)
-        player_overview[col_name] = player_overview[col_name].astype('Int64')
-    
-    # Berechne Delta nur wenn beide Werte vorhanden sind
-    if compare_date in available_dates and compare_date != newest_date:
-        compare_col = compare_date
-        player_overview['Δ'] = player_overview.apply(
-            lambda row: row[date_columns[0]] - row[compare_col] 
-            if pd.notna(row[date_columns[0]]) and pd.notna(row[compare_col]) else None,
-            axis=1
-        )
-    else:
-        player_overview['Δ'] = None
-    
-    return player_overview, date_columns, available_dates
-
-@st.cache_data
-def get_all_speed_mod_counts_per_date(df_guild, player_base, key_relevance_filter=None, relevance_dict=None):
-    """
-    Berechnet ALLE Speed-Mod-Counts pro Spieler und Datum (mit Caching).
-    Wird nur einmal pro Guild berechnet.
-    
-    Args:
-        df_guild: Gefilterte Daten für diese Gilde
-        player_base: DataFrame mit [AllyCode, Name] - einheitliche Spielerliste
-        key_relevance_filter: Liste ['👍', '👎'] für Key/Non-Key Character Filter
-        relevance_dict: Dict mit {base_id: {'is_key': True/False}}
-    
-    Returns:
-        Dict[date, DataFrame]: {date: DataFrame mit [AllyCode, Name, Speed10, Speed15, Speed20, Speed25]}
-    """
-    available_dates = sorted(df_guild['date'].unique(), reverse=True)
-    speed_cols = ['Speed10', 'Speed15', 'Speed20', 'Speed25']
-    
-    result = {}
-    for date in available_dates:
-        df_date = df_guild[df_guild['date'] == date]
-        
-        # Nur Characters (keine Ships)
-        df_chars = df_date[df_date['CombatType'] == 'Character']
-        
-        # Wende Key Relevance Filter an (wenn aktiv)
-        if key_relevance_filter and relevance_dict:
-            if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-                # Nur Key Characters (key_character == 'yes')
-                key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'yes']
-                df_chars = df_chars[df_chars['BaseId'].isin(key_base_ids)]
-            elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-                # Nur Non-Key Characters (key_character == 'no')
-                non_key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'no']
-                df_chars = df_chars[df_chars['BaseId'].isin(non_key_base_ids)]
-            # Wenn beide oder keines: alle Characters
-        
-        # Für alle Spieler in player_base
-        player_counts = []
-        for _, player_row in player_base.iterrows():
-            ally_code = player_row['AllyCode']
-            player_name = player_row['Name']
-            
-            df_player = df_chars[df_chars['AllyCode'] == ally_code]
-            
-            if not df_player.empty:
-                counts = {
-                    'AllyCode': ally_code,
-                    'Name': player_name,
-                    **{col: df_player[col].sum() for col in speed_cols}
-                }
-            else:
-                # Spieler nicht in diesem Datum - None (nicht 0!)
-                counts = {
-                    'AllyCode': ally_code,
-                    'Name': player_name,
-                    **{col: None for col in speed_cols}
-                }
-            player_counts.append(counts)
-        
-        result[date] = pd.DataFrame(player_counts)
-    
-    return result
-
-def calculate_player_speed_mod_overview(df_guild, player_base, speed_columns, compare_date, key_relevance_filter=None, relevance_dict=None):
-    """
-    Berechnet Speed-Mod-Overview basierend auf gecachten Counts (OHNE eigenes Caching).
-    
-    Args:
-        df_guild: Gefilterte Daten für diese Gilde
-        player_base: DataFrame mit [AllyCode, Name] - einheitliche Spielerliste
-        speed_columns: Liste der Speed-Spalten (z.B. ['Speed20', 'Speed25'])
-        compare_date: Datum für Delta-Vergleich
-        key_relevance_filter: Liste ['👍', '👎'] für Key/Non-Key Character Filter
-        relevance_dict: Dict mit {base_id: {'is_key': True/False}}
-    
-    Returns:
-        Tuple: (player_overview, date_columns, available_dates)
-    """
-    # SKIP wenn nur Styling-Änderung (Checkbox geklickt)
-    if not st.session_state.get('recalculate', True):
-        if 'player_overview_speed_mods' in st.session_state:
-            return st.session_state.player_overview_speed_mods, [], []
-    
-    # Hole gecachte Counts
-    counts_per_date = get_all_speed_mod_counts_per_date(df_guild, player_base, key_relevance_filter, relevance_dict)
-    
-    available_dates = sorted(counts_per_date.keys(), reverse=True)
-    newest_date = available_dates[0]
-    
-    # Starte mit Spielerliste aus player_base (nicht aus counts!)
-    player_overview = player_base.copy()
-    
-    # Für jedes Datum: Summiere die ausgewählten Speed-Spalten
-    date_columns = []
-    for i, date in enumerate(available_dates):
-        df_date_counts = counts_per_date[date]
-        
-        # Summiere nur die gewählten Speed-Thresholds - aber nur wenn nicht alle None sind!
-        df_date_counts['SpeedModCount'] = df_date_counts[speed_columns].sum(axis=1, skipna=False)
-        
-        col_name = date
-        date_columns.append(col_name)
-        
-        player_overview = player_overview.merge(
-            df_date_counts[['AllyCode', 'SpeedModCount']],
-            on='AllyCode',
-            how='left'
-        )
-        player_overview = player_overview.rename(columns={'SpeedModCount': col_name})
-        
-        # Alle Spalten als Int64 (erlaubt None für fehlende Spieler)
-        player_overview[col_name] = player_overview[col_name].astype('Int64')
-    
-    # Berechne Delta nur wenn beide Werte vorhanden sind
-    if compare_date in available_dates and compare_date != newest_date:
-        compare_col = compare_date
-        player_overview['Δ'] = player_overview.apply(
-            lambda row: row[date_columns[0]] - row[compare_col] 
-            if pd.notna(row[date_columns[0]]) and pd.notna(row[compare_col]) else None,
-            axis=1
-        )
-    else:
-        player_overview['Δ'] = None
-    
-    return player_overview, date_columns, available_dates
-
-def show_player_overview_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
-    """Tab 3 - Player Relics mit Relic-Vergleich und Row-Selection."""
-    
-    # Hole player_base DIREKT aus Session State (nicht als Parameter!)
+    # Hole player_base DIREKT aus Session State
     player_base = st.session_state.player_base_global
     
-    # Initialize session state for player tab filters
+    # Initialize session state für Metric-Auswahl
+    if 'progress_metric_type' not in st.session_state:
+        st.session_state.progress_metric_type = 'Relics'
+    
+    # Initialize session state für Segmented Controls (falls nicht vorhanden)
     if 'player_relics_selection' not in st.session_state:
         st.session_state.player_relics_selection = ['R10', 'R9', 'R8']
-    
-    # Header mit Segmented Control in einem Container mit fester Breite
-    with st.container(width=900):
-        col1, col2, col3 = st.columns([2, 3, 1])
-        with col1:
-            st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_RELIC_COUNT}</h3>', unsafe_allow_html=True)
-        with col2:
-            # Relic Level Segmented Control - iOS-style button group
-            relic_options = ['R10', 'R9', 'R8', 'R7', 'R6']
-            selected_relics = st.segmented_control(
-                "Relic Level",
-                options=relic_options,
-                default=st.session_state.player_relics_selection,
-                key="player_relics_segmented",
-                selection_mode="multi",
-                label_visibility="collapsed"
-            )
-            
-            # Update session state
-            if selected_relics != st.session_state.player_relics_selection:
-                st.session_state.player_relics_selection = selected_relics
-        with col3:
-            # Compare Date Dropdown
-            available_dates = sorted(df_guild['date'].unique(), reverse=True)
-            if 'compare_date_select' not in st.session_state and len(available_dates) >= 2:
-                st.session_state.compare_date_select = available_dates[1]
-            
-            # Selectbox mit Session State synchronisiert
-            current_value = st.session_state.get('compare_date_select', available_dates[1] if len(available_dates) >= 2 else available_dates[0])
-            if current_value not in available_dates:
-                current_value = available_dates[1] if len(available_dates) >= 2 else available_dates[0]
-            
-            compare_date = st.selectbox(
-                "Compare to:",
-                options=available_dates,
-                index=available_dates.index(current_value),
-                key="compare_date_relics",
-                label_visibility="collapsed",
-                on_change=lambda: setattr(st.session_state, 'compare_date_select', st.session_state.compare_date_relics)
-            )
-            
-            # Konvertiere zu Relic-Level-Liste (z.B. ['R8', 'R10'] → [8, 10])
-            relic_levels = [int(r[1:]) for r in selected_relics] if selected_relics else []
-    
-    if not relic_levels:
-        st.warning("⚠️ Please select at least one relic level.")
-        return
-    
-    # Calculate player_overview (df_guild is already filtered!)
-    player_base_minimal = player_base[['AllyCode', 'Name']].copy()
-    player_overview, date_columns, available_dates = calculate_player_relic_overview(
-        df_guild, player_base_minimal, relic_levels, compare_date, key_relevance_filter, relevance_dict
-    )
-    
-    if len(available_dates) < 2:
-        st.warning("⚠️ At least 2 data snapshots required for comparison.")
-        return
-    
-    # Merge mit player_base_global (hat Checked/PlayerColor!)
-    player_overview = player_overview.merge(
-        player_base[['AllyCode', 'Checked', 'PlayerColor']], 
-        on='AllyCode', 
-        how='left'
-    )
-    
-    # Füge Label-Spalte hinzu
-    sorted_relics = sorted(selected_relics, key=lambda x: int(x[1:]), reverse=True)
-    selected_label = ' '.join(sorted_relics)
-    player_overview['Metric'] = selected_label
-    
-    # KEINE Checkbox-Spalte mehr - wird durch Row-Selection ersetzt!
-    
-    # Sortiere nach Delta
-    player_overview = player_overview.sort_values('Δ', ascending=False, na_position='last')
-    player_overview = player_overview.reset_index(drop=True)
-    
-    # Erstelle Mapping für Styling
-    player_color_mapping = dict(zip(player_overview['Name'], player_overview['PlayerColor']))
-    
-    # Spalten neu ordnen - OHNE ✓!
-    column_order = ['Name', 'AllyCode', 'Δ', 'Metric'] + date_columns
-    player_overview = player_overview[column_order]
-    
-    # Styling für checked players - nutzt PlayerColor aus Mapping
-    def highlight_checked_players(row):
-        # Hole checked-Status aus player_base
-        player_name = row['Name']
-        is_checked = player_base.loc[player_base['Name'] == player_name, 'Checked'].iloc[0] if player_name in player_base['Name'].values else False
-        
-        if is_checked:
-            color = player_color_mapping.get(player_name, '#CCCCCC')
-            return [f'background-color: {color}99' for _ in row]
-        else:
-            return ['' for _ in row]
-    
-    # Styling anwenden
-    styled_df = player_overview.style.apply(highlight_checked_players, axis=1)
-    
-    # Column configuration - NO checkbox column!
-    column_config = {
-        'Name': st.column_config.TextColumn('Player Name', width=175),
-        'AllyCode': st.column_config.TextColumn('AllyCode', width=120),
-        'Δ': st.column_config.NumberColumn(
-            'Δ',
-            help='Change since last data snapshot (only for players in both CSVs)',
-            format='%+d',
-            width=80
-        ),
-        'Metric': st.column_config.TextColumn('Metric', width=110)
-    }
-    
-    # Date columns as numbers (mark comparison date with 📍)
-    for col in date_columns:
-        label = f"📍 {col}" if col == compare_date else col
-        column_config[col] = st.column_config.NumberColumn(label, format='%d')
-    
-    # on_select Callback for Cell-Selection
-    def on_relics_select():
-        """Callback when player cell is selected - toggle the player of the row."""
-        # Hole Selection-Event
-        selection = st.session_state.player_relics_table_selection
-        
-        # Zugriff auf selection dict
-        if hasattr(selection, 'selection'):
-            sel_dict = selection.selection
-        elif isinstance(selection, dict):
-            sel_dict = selection.get('selection', {})
-        else:
-            return
-        
-        selected_cells = sel_dict.get('cells', [])
-        
-        # Extrahiere Zeilen-Index: (row_idx, column_name)
-        if selected_cells:
-            cell = selected_cells[0]
-            if isinstance(cell, (list, tuple)) and len(cell) >= 1:
-                row_idx = cell[0]
-            elif isinstance(cell, dict):
-                row_idx = cell.get('row', 0)
-            else:
-                return
-            
-            player_name = player_overview.iloc[row_idx]['Name']
-            
-            if player_name in st.session_state.player_base_global['Name'].values:
-                # Toggle: checked → unchecked, unchecked → checked
-                current_state = st.session_state.player_base_global.loc[
-                    st.session_state.player_base_global['Name'] == player_name, 
-                    'Checked'
-                ].iloc[0]
-                
-                st.session_state.player_base_global.loc[
-                    st.session_state.player_base_global['Name'] == player_name, 
-                    'Checked'
-                ] = not current_state
-    
-    # Tabelle mit on_select
-    st.dataframe(
-        styled_df,
-        hide_index=True,
-        width="content",
-        height=1100,
-        row_height=21,
-        column_order=("Name", "Δ", "Metric") + tuple(date_columns),
-        column_config=column_config,
-        selection_mode="single-cell",
-        on_select=on_relics_select,
-        key="player_relics_table_selection"
-    )
-
-
-def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
-    """Tab 4 - Player Omicrons mit Omicron-Vergleich und Row-Selection."""
-    
-    # Hole player_base DIREKT aus Session State (nicht als Parameter!)
-    player_base = st.session_state.player_base_global
-    
-    # Initialize session state for player tab filters
     if 'player_omicrons_selection' not in st.session_state:
         st.session_state.player_omicrons_selection = ['TW', 'GAC']
+    if 'player_speed_selection' not in st.session_state:
+        st.session_state.player_speed_selection = ['20+', '25+']  
+    if 'player_mod6_selection' not in st.session_state:
+        st.session_state.player_mod6_selection = ['Mod6']
     
-    # Header mit Segmented Control in einem Container mit fester Breite
-    with st.container(width=900):
-        col1, col2, col3 = st.columns([2, 3, 1])
-        with col1:
-            st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_OMICRON_COUNT}</h3>', unsafe_allow_html=True)
-        with col2:
-            # Omicron Type Segmented Control - iOS-style button group
-            omicron_options = {
-                'TW': 'TWOmiCount',
-                'GAC': 'GACOmiCount',
-                'TB': 'TBOmiCount',
-                'CQ': 'CQOmiCount'
-            }
-            selected_omicrons = st.segmented_control(
-                "Omicron Type",
-                options=list(omicron_options.keys()),
+    # Header mit Titel, Date-Dropdown, Segmented Control und Radio
+    with st.container(width=1200, horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", gap="small"):
+        # Titel mit dynamischem Suffix basierend auf Key Relevance Filter
+        with st.container(width=240):
+            # Bestimme Titel-Suffix
+            if key_relevance_filter:
+                if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
+                    title_suffix = " (key)"
+                elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
+                    title_suffix = " (rest)"
+                else:
+                    title_suffix = " (all)"
+            else:
+                title_suffix = " (all)"
+            
+            st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_PROGRESS}{title_suffix}</h3>', unsafe_allow_html=True)
+        
+        # Compare Date Dropdown
+        available_dates = sorted(df_all_dates['date'].unique(), reverse=True)
+        if 'compare_date_select' not in st.session_state and len(available_dates) >= 2:
+            st.session_state.compare_date_select = available_dates[1]
+        
+        current_value = st.session_state.get('compare_date_select', available_dates[1] if len(available_dates) >= 2 else available_dates[0])
+        if current_value not in available_dates:
+            current_value = available_dates[1] if len(available_dates) >= 2 else available_dates[0]
+        
+        compare_date = st.selectbox(
+            "Compare to:",
+            options=available_dates,
+            index=available_dates.index(current_value),
+            key="compare_date_progress",
+            label_visibility="collapsed",
+            width =150,
+            help="Select the date to compare your current metrics against.",
+            on_change=lambda: setattr(st.session_state, 'compare_date_select', st.session_state.compare_date_progress)
+        )
+        
+        # Segmented Control abhängig vom Metric-Typ (nur anzeigen wenn Typ gesetzt)
+        if st.session_state.progress_metric_type == 'Relics':
+            selected = st.segmented_control(
+                "Relic Levels:",
+                options=['R10', 'R9', 'R8', 'R7', 'R6'],
+                default=st.session_state.player_relics_selection,
+                key="progress_relics_segmented",
+                selection_mode="multi",
+                width=250,
+                label_visibility="collapsed"
+            )
+            if selected != st.session_state.player_relics_selection:
+                st.session_state.player_relics_selection = selected
+            
+        elif st.session_state.progress_metric_type == 'Omis':
+            selected = st.segmented_control(
+                "Omicron Types:",
+                options=['TW', 'GAC', 'TB', 'CQ'],
                 default=st.session_state.player_omicrons_selection,
-                key="player_omicrons_segmented",
+                key="progress_omicrons_segmented",
                 selection_mode="multi",
+                width=250,
                 label_visibility="collapsed"
             )
-            
-            # Update session state
-            if selected_omicrons != st.session_state.player_omicrons_selection:
-                st.session_state.player_omicrons_selection = selected_omicrons
-        with col3:
-            # Compare Date Dropdown
-            available_dates = sorted(df_guild['date'].unique(), reverse=True)
-            if 'compare_date_select' not in st.session_state and len(available_dates) >= 2:
-                st.session_state.compare_date_select = available_dates[1]
-            
-            # Selectbox mit Session State synchronisiert
-            current_value = st.session_state.get('compare_date_select', available_dates[1] if len(available_dates) >= 2 else available_dates[0])
-            if current_value not in available_dates:
-                current_value = available_dates[1] if len(available_dates) >= 2 else available_dates[0]
-            
-            compare_date = st.selectbox(
-                "Compare to:",
-                options=available_dates,
-                index=available_dates.index(current_value),
-                key="compare_date_omicrons",
-                label_visibility="collapsed",
-                on_change=lambda: setattr(st.session_state, 'compare_date_select', st.session_state.compare_date_omicrons)
+            if selected != st.session_state.player_omicrons_selection:
+                st.session_state.player_omicrons_selection = selected
+                
+        elif st.session_state.progress_metric_type == 'Speed':
+            selected = st.segmented_control(
+                "Speed Thresholds:",
+                options=['25+', '20+', '15+', '10+'],
+                default=st.session_state.player_speed_selection,
+                key="progress_speed_segmented",
+                selection_mode="multi",
+                width=250,
+                label_visibility="collapsed"
             )
+            if selected != st.session_state.player_speed_selection:
+                st.session_state.player_speed_selection = selected
+        
+        else:  # Mod6
+            selected = st.segmented_control(
+                "Mod6:",
+                options=['Mod6'],
+                default=st.session_state.player_mod6_selection,
+                key="progress_mod6_segmented",
+                selection_mode="multi",
+                width=250,
+                label_visibility="collapsed"
+            )
+            if selected != st.session_state.player_mod6_selection:
+                st.session_state.player_mod6_selection = selected
+        
+        # Radio-Button für Metric-Typ
+        metric_type = st.radio(
+            "Metric:",
+            options=['Relics', 'Omis', 'Speed', 'Mod6'],
+            index=['Relics', 'Omis', 'Speed', 'Mod6'].index(st.session_state.progress_metric_type),
+            horizontal=True,
+            key="progress_metric_radio",
+            label_visibility="collapsed",
+            on_change=on_metric_type_change  # Callback für sofortige Aktualisierung
+        )
+    
+    # Validierung: mindestens eine Metrik ausgewählt
+    if not selected:
+        st.warning("⚠️ Please select at least one metric.")
+        return
+    
+    # OPTIMIERUNG: Skip Datenberechnung wenn nur Player-Färbung!
+    if st.session_state.get('player_clicked', False):
+        # Nur Styling neu anwenden - KEINE Pandas-Operationen!
+        # player_overview muss aus vorherigem Run existieren
+        if 'player_overview_cache' not in st.session_state:
+            # Fallback: Flag war inkonsistent, berechne normal
+            st.session_state.player_clicked = False
+    
+    if not st.session_state.get('player_clicked', False):
+        # Normale Berechnung: EINMAL alle gecachten Daten holen (Mega-DataFrame!)
+        player_base_minimal = player_base[['AllyCode', 'Name']].copy()
+        df_all = get_all_player_metrics_per_date(df_all_dates, player_base_minimal, key_relevance_filter, relevance_dict)
+        
+        # Extrahiere nur relevante Spalten basierend auf Metric-Typ
+        if metric_type == 'Relics':
+            col_pattern = '_R'
+            metric_levels = [int(r[1:]) for r in selected]  # ['R8', 'R10'] → [8, 10]
+            metric_label = ' '.join(sorted(selected, key=lambda x: int(x[1:]), reverse=True))
+        elif metric_type == 'Omis':
+            col_pattern = 'OmiCount'
+            omi_map = {'TW': 'TWOmiCount', 'GAC': 'GACOmiCount', 'TB': 'TBOmiCount', 'CQ': 'CQOmiCount'}
+            metric_cols = [omi_map[s] for s in selected]
+            metric_label = ' '.join(sorted(selected, reverse=True))
+        elif metric_type == 'Speed':
+            col_pattern = '_Speed'
+            speed_map = {'10+': 'Speed10', '15+': 'Speed15', '20+': 'Speed20', '25+': 'Speed25'}
+            metric_cols = [speed_map[s] for s in selected]
+            metric_label = ' '.join(sorted(selected, reverse=True))
+        else:  # Mod6
+            col_pattern = '_Mod6'
+            metric_cols = ['Mod6']
+            metric_label = 'Mod6'
+        
+        # Finde alle Datums-Spalten für diese Metrik
+        date_cols = [col for col in df_all.columns if col_pattern in col]
+        available_dates = sorted(set([col.split('_')[0] for col in date_cols]), reverse=True)
+        newest_date = available_dates[0]
+        
+        if len(available_dates) < 2:
+            st.warning("⚠️ At least 2 data snapshots required for comparison.")
+            return
+        
+        # Starte mit AllyCode und Name
+        player_overview = df_all[['AllyCode', 'Name']].copy()
+        
+        # Für jedes Datum: Summiere die ausgewählten Metriken
+        date_columns = []
+        for date in available_dates:
+            if metric_type == 'Relics':
+                date_metric_cols = [f'{date}_R{r}' for r in metric_levels]
+            elif metric_type == 'Mod6':
+                date_metric_cols = [f'{date}_Mod6']
+            else:
+                date_metric_cols = [f'{date}_{col}' for col in metric_cols]
             
-            # Konvertiere zu Spalten-Liste
-            omicron_columns = [omicron_options[omi] for omi in selected_omicrons] if selected_omicrons else []
+            # Summiere mit skipna=True, aber setze auf None wenn ALLE Werte NaN sind (Spieler war nicht in Gilde)
+            sums = df_all[date_metric_cols].sum(axis=1, skipna=True)
+            all_nan = df_all[date_metric_cols].isna().all(axis=1)
+            player_overview[date] = sums.where(~all_nan, None)
+            player_overview[date] = player_overview[date].astype('Int64')
+            date_columns.append(date)
+        
+        # Berechne Delta
+        if compare_date in available_dates and compare_date != newest_date:
+            player_overview['Δ'] = player_overview.apply(
+                lambda row: row[newest_date] - row[compare_date] 
+                if pd.notna(row[newest_date]) and pd.notna(row[compare_date]) else None,
+                axis=1
+            )
+        else:
+            player_overview['Δ'] = None
+        
+        # Merge mit player_base_global (hat Checked/PlayerColor!)
+        player_overview = player_overview.merge(
+            player_base[['AllyCode', 'Checked', 'PlayerColor']], 
+            on='AllyCode', 
+            how='left'
+        )
+        
+        # Füge Label-Spalte hinzu
+        player_overview['Metric'] = metric_label
+        
+        # Sortiere nach Delta
+        player_overview = player_overview.sort_values('Δ', ascending=False, na_position='last')
+        player_overview = player_overview.reset_index(drop=True)
+        
+        # Spalten neu ordnen
+        column_order = ['Name', 'AllyCode', 'Δ', 'Metric'] + date_columns
+        player_overview = player_overview[column_order]
+        
+        # Cache für nächsten Run (falls player_clicked) - OHNE Checked/PlayerColor!
+        player_overview_cache = player_overview[['Name', 'AllyCode', 'Δ', 'Metric'] + date_columns].copy()
+        st.session_state.player_overview_cache = player_overview_cache
+        st.session_state.date_columns_cache = date_columns
+        
+        # Merge AKTUELLEN Checked/PlayerColor Status (auch im normalen Pfad für Styling!)
+        player_overview = player_overview.merge(
+            player_base[['AllyCode', 'Checked', 'PlayerColor']], 
+            on='AllyCode', 
+            how='left'
+        )
+    else:
+        # Optimierter Pfad: Nutze gecachte Daten!
+        player_overview = st.session_state.player_overview_cache.copy()
+        date_columns = st.session_state.date_columns_cache
+        
+        # Merge AKTUELLEN Checked/PlayerColor Status!
+        player_overview = player_overview.merge(
+            player_base[['AllyCode', 'Checked', 'PlayerColor']], 
+            on='AllyCode', 
+            how='left'
+        )
     
-    if not omicron_columns:
-        st.warning("⚠️ Please select at least one omicron type.")
-        return
-    
-    # Calculate player_overview (df_guild is already filtered!)
-    player_base_minimal = player_base[['AllyCode', 'Name']].copy()
-    player_overview, date_columns, available_dates = calculate_player_omicron_overview(
-        df_guild, player_base_minimal, omicron_columns, compare_date, key_relevance_filter, relevance_dict
-    )
-    
-    if len(available_dates) < 2:
-        st.warning("⚠️ At least 2 data snapshots required for comparison.")
-        return
-    
-    # Merge mit player_base_global (hat Checked/PlayerColor!)
-    player_overview = player_overview.merge(
-        player_base[['AllyCode', 'Checked', 'PlayerColor']], 
-        on='AllyCode', 
-        how='left'
-    )
-    
-    # Füge Label-Spalte hinzu
-    sorted_omicrons = sorted(selected_omicrons, reverse=True)
-    selected_label = ' '.join(sorted_omicrons)
-    player_overview['Metric'] = selected_label
-    
-    # KEINE Checkbox-Spalte mehr - wird durch Row-Selection ersetzt!
-    
-    # Sortiere nach Delta
-    player_overview = player_overview.sort_values('Δ', ascending=False, na_position='last')
-    player_overview = player_overview.reset_index(drop=True)
-    
-    # Erstelle Mapping für Styling
+    # Erstelle Mapping für Styling (nach Merge!)
     player_color_mapping = dict(zip(player_overview['Name'], player_overview['PlayerColor']))
     
-    # Spalten neu ordnen - OHNE ✓!
-    column_order = ['Name', 'AllyCode', 'Δ', 'Metric'] + date_columns
-    player_overview = player_overview[column_order]
-    
-    # Styling für checked players - nutzt PlayerColor aus Mapping
+    # Styling für checked players
     def highlight_checked_players(row):
-        # Hole checked-Status aus player_base
         player_name = row['Name']
         is_checked = player_base.loc[player_base['Name'] == player_name, 'Checked'].iloc[0] if player_name in player_base['Name'].values else False
         
@@ -1908,16 +1682,15 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
         else:
             return ['' for _ in row]
     
-    # Styling anwenden
     styled_df = player_overview.style.apply(highlight_checked_players, axis=1)
     
-    # Spalten-Konfiguration - KEINE Checkbox-Spalte mehr!
+    # Column configuration
     column_config = {
         'Name': st.column_config.TextColumn('Player Name', width=175),
         'AllyCode': st.column_config.TextColumn('AllyCode', width=120),
         'Δ': st.column_config.NumberColumn(
             'Δ',
-            help='Änderung seit letztem Datenabzug (nur bei Spielern in beiden CSVs)',
+            help='Change since comparison date',
             format='%+d',
             width=80
         ),
@@ -1929,13 +1702,10 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
         label = f"📍 {col}" if col == compare_date else col
         column_config[col] = st.column_config.NumberColumn(label, format='%d')
     
-    # on_select Callback für Cell-Selection
-    def on_omicrons_select():
-        """Callback wenn Spieler-Zelle ausgewählt wird - toggle den Spieler der Zeile."""
-        # Hole Selection-Event
-        selection = st.session_state.player_omicrons_table_selection
+    # on_select Callback für Row-Selection
+    def on_progress_select():
+        selection = st.session_state.progress_table_selection
         
-        # Zugriff auf selection dict
         if hasattr(selection, 'selection'):
             sel_dict = selection.selection
         elif isinstance(selection, dict):
@@ -1945,7 +1715,6 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
         
         selected_cells = sel_dict.get('cells', [])
         
-        # Extrahiere Zeilen-Index: (row_idx, column_name)
         if selected_cells:
             cell = selected_cells[0]
             if isinstance(cell, (list, tuple)) and len(cell) >= 1:
@@ -1958,7 +1727,6 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
             player_name = player_overview.iloc[row_idx]['Name']
             
             if player_name in st.session_state.player_base_global['Name'].values:
-                # Toggle: checked → unchecked, unchecked → checked
                 current_state = st.session_state.player_base_global.loc[
                     st.session_state.player_base_global['Name'] == player_name, 
                     'Checked'
@@ -1968,6 +1736,10 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
                     st.session_state.player_base_global['Name'] == player_name, 
                     'Checked'
                 ] = not current_state
+                
+                # Setze Flag: Nur Player-Färbung, keine Neuberechnung nötig!
+                st.session_state.player_clicked = True
+                
     
     # Tabelle mit on_select
     st.dataframe(
@@ -1979,211 +1751,25 @@ def show_player_omicrons_tab(df_guild, compare_date, key_relevance_filter, relev
         column_order=("Name", "Δ", "Metric") + tuple(date_columns),
         column_config=column_config,
         selection_mode="single-cell",
-        on_select=on_omicrons_select,
-        key="player_omicrons_table_selection"
+        on_select=on_progress_select,
+        key="progress_table_selection"
     )
-
-
-def show_player_speed_mods_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
-    """Tab 5 - Player Speed Mods mit Speed-Vergleich und Row-Selection."""
-    
-    # Hole player_base DIREKT aus Session State (nicht als Parameter!)
-    player_base = st.session_state.player_base_global
-    
-    # Initialize session state for player tab filters
-    if 'player_speed_mods_selection' not in st.session_state:
-        st.session_state.player_speed_mods_selection = ['20+', '25+']
-    
-    # Header mit Segmented Control in einem Container mit fester Breite
-    with st.container(width=900):
-        col1, col2, col3 = st.columns([2, 3, 1])
-        with col1:
-            st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_SPEED_MOD_COUNT}</h3>', unsafe_allow_html=True)
-        with col2:
-            # Speed Threshold Segmented Control - iOS-style button group
-            speed_options = {
-                '25+': 'Speed25',
-                '20+': 'Speed20',                
-                '15+': 'Speed15',
-                '10+': 'Speed10'
-            }
-            selected_speeds = st.segmented_control(
-                "Speed Threshold",
-                options=list(speed_options.keys()),
-                default=st.session_state.player_speed_mods_selection,
-                key="player_speed_mods_segmented",
-                selection_mode="multi",
-                label_visibility="collapsed"
-            )
-            
-            # Update session state
-            if selected_speeds != st.session_state.player_speed_mods_selection:
-                st.session_state.player_speed_mods_selection = selected_speeds
-        with col3:
-            # Compare Date Dropdown
-            available_dates = sorted(df_guild['date'].unique(), reverse=True)
-            if 'compare_date_select' not in st.session_state and len(available_dates) >= 2:
-                st.session_state.compare_date_select = available_dates[1]
-            
-            # Selectbox mit Session State synchronisiert
-            current_value = st.session_state.get('compare_date_select', available_dates[1] if len(available_dates) >= 2 else available_dates[0])
-            if current_value not in available_dates:
-                current_value = available_dates[1] if len(available_dates) >= 2 else available_dates[0]
-            
-            compare_date = st.selectbox(
-                "Compare to:",
-                options=available_dates,
-                index=available_dates.index(current_value),
-                key="compare_date_speed_mods",
-                label_visibility="collapsed",
-                on_change=lambda: setattr(st.session_state, 'compare_date_select', st.session_state.compare_date_speed_mods)
-            )
-            
-            # Konvertiere zu Spalten-Liste
-            speed_columns = [speed_options[speed] for speed in selected_speeds] if selected_speeds else []
-    
-    if not speed_columns:
-        st.warning("⚠️ Please select at least one speed threshold.")
-        return
-    
-    # Calculate player_overview (df_guild is already filtered!)
-    player_base_minimal = player_base[['AllyCode', 'Name']].copy()
-    player_overview, date_columns, available_dates = calculate_player_speed_mod_overview(
-        df_guild, player_base_minimal, speed_columns, compare_date, key_relevance_filter, relevance_dict
-    )
-    
-    if len(available_dates) < 2:
-        st.warning("⚠️ At least 2 data snapshots required for comparison.")
-        return
-    
-    # Merge mit player_base_global (hat Checked/PlayerColor!)
-    player_overview = player_overview.merge(
-        player_base[['AllyCode', 'Checked', 'PlayerColor']], 
-        on='AllyCode', 
-        how='left'
-    )
-    
-    # Füge Label-Spalte hinzu
-    sorted_speeds = sorted(selected_speeds, key=lambda x: int(x[:-1]), reverse=True)
-    selected_label = ' '.join(sorted_speeds)
-    player_overview['Metric'] = selected_label
-    
-    # KEINE Checkbox-Spalte mehr - wird durch Row-Selection ersetzt!
-    
-    # Sortiere nach Delta
-    player_overview = player_overview.sort_values('Δ', ascending=False, na_position='last')
-    player_overview = player_overview.reset_index(drop=True)
-    
-    # Erstelle Mapping für Styling
-    player_color_mapping = dict(zip(player_overview['Name'], player_overview['PlayerColor']))
-    
-    # Spalten neu ordnen - OHNE ✓!
-    column_order = ['Name', 'AllyCode', 'Δ', 'Metric'] + date_columns
-    player_overview = player_overview[column_order]
-    
-    # Styling für checked players - nutzt PlayerColor aus Mapping
-    def highlight_checked_players(row):
-        # Hole checked-Status aus player_base
-        player_name = row['Name']
-        is_checked = player_base.loc[player_base['Name'] == player_name, 'Checked'].iloc[0] if player_name in player_base['Name'].values else False
-        
-        if is_checked:
-            color = player_color_mapping.get(player_name, '#CCCCCC')
-            return [f'background-color: {color}99' for _ in row]
-        else:
-            return ['' for _ in row]
-    
-    # Styling anwenden
-    styled_df = player_overview.style.apply(highlight_checked_players, axis=1)
-    
-    # Spalten-Konfiguration - KEINE Checkbox-Spalte mehr!
-    column_config = {
-        'Name': st.column_config.TextColumn('Player Name', width=175),
-        'AllyCode': st.column_config.TextColumn('AllyCode', width=120),
-        'Δ': st.column_config.NumberColumn(
-            'Δ',
-            help='Änderung seit letztem Datenabzug (nur bei Spielern in beiden CSVs)',
-            format='%+d',
-            width=80
-        ),
-        'Metric': st.column_config.TextColumn('Metric', width=110)
-    }
-    
-    # Date columns as numbers (mark comparison date with 📍)
-    for col in date_columns:
-        label = f"📍 {col}" if col == compare_date else col
-        column_config[col] = st.column_config.NumberColumn(label, format='%d')
-       
-    # on_select Callback für Cell-Selection
-    def on_speed_mods_select():
-        """Callback wenn Spieler-Zelle ausgewählt wird - toggle den Spieler der Zeile."""
-        # Hole Selection-Event
-        selection = st.session_state.player_speed_mods_table_selection
-        
-        # Zugriff auf selection dict
-        if hasattr(selection, 'selection'):
-            sel_dict = selection.selection
-        elif isinstance(selection, dict):
-            sel_dict = selection.get('selection', {})
-        else:
-            return
-        
-        selected_cells = sel_dict.get('cells', [])
-        
-        # Extrahiere Zeilen-Index: (row_idx, column_name)
-        if selected_cells:
-            cell = selected_cells[0]
-            if isinstance(cell, (list, tuple)) and len(cell) >= 1:
-                row_idx = cell[0]
-            elif isinstance(cell, dict):
-                row_idx = cell.get('row', 0)
-            else:
-                return
-            
-            player_name = player_overview.iloc[row_idx]['Name']
-            
-            if player_name in st.session_state.player_base_global['Name'].values:
-                # Toggle: checked → unchecked, unchecked → checked
-                current_state = st.session_state.player_base_global.loc[
-                    st.session_state.player_base_global['Name'] == player_name, 
-                    'Checked'
-                ].iloc[0]
-                
-                st.session_state.player_base_global.loc[
-                    st.session_state.player_base_global['Name'] == player_name, 
-                    'Checked'
-                ] = not current_state
-    
-    # Tabelle mit on_select
-    st.dataframe(
-        styled_df,
-        hide_index=True,
-        width="content",
-        height=1100,
-        row_height=21,
-        column_order=("Name", "Δ", "Metric") + tuple(date_columns),
-        column_config=column_config,
-        selection_mode="single-cell",
-        on_select=on_speed_mods_select,
-        key="player_speed_mods_table_selection"
-    )
-
 
 @st.cache_data
-def get_raw_mod_data(df_guild, player_base, relevance_dict=None):
+def get_raw_mod_data(df_all_dates, player_base, relevance_dict=None):
     """
     Lädt ALLE Mod-Daten ohne Filter (mit Caching).
     Speichert pro Player → pro Character → Mod-Daten + Metadata.
     
     Args:
+        df_all_dates: DataFrame mit allen Datenständen (wird gefiltert auf neuesten)
+        player_base: DataFrame mit [AllyCode, Name] - NUR unveränderliche Spalten!
         relevance_dict: Optional {base_id: 'yes'/'no'} für IsKey Metadata
     
     Returns:
         Dict[AllyCode, Dict]: {
             ally_code: {
                 'Name': player_name,
-                'Checked': bool,
-                'PlayerColor': str,
                 'Characters': {
                     base_id: {
                         'Name': char_name,
@@ -2207,9 +1793,9 @@ def get_raw_mod_data(df_guild, player_base, relevance_dict=None):
     char_data = load_character_data()
     char_lookup = {char['base_id']: char for char in char_data}
     
-    available_dates = sorted(df_guild['date'].unique(), reverse=True)
+    available_dates = sorted(df_all_dates['date'].unique(), reverse=True)
     newest_date = available_dates[0]
-    df_newest = df_guild[df_guild['date'] == newest_date]
+    df_newest = df_all_dates[df_all_dates['date'] == newest_date]
     
     # Nur Characters (keine Ships)
     df_chars = df_newest[df_newest['CombatType'] == 'Character']
@@ -2292,8 +1878,6 @@ def get_raw_mod_data(df_guild, player_base, relevance_dict=None):
         
         result[ally_code] = {
             'Name': player_name,
-            'Checked': player_row['Checked'],
-            'PlayerColor': player_row['PlayerColor'],
             'Characters': characters
         }
     
@@ -2374,9 +1958,8 @@ def filter_and_aggregate_mod_data_simple(raw_data, analysis_type, selected_slots
     return player_stats, all_stats
 
 
-def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, relevance_dict):
-    """Tab 6 - Mod Distribution Analysis."""
-    from data.mod_mappings import get_primary_stat_name, get_mod_set_name
+def show_mod_distribution_tab(df_newest, compare_date, key_relevance_filter, relevance_dict):
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Start: show_mod_distribution_tab", file=sys.stderr)
     
     # Callback für Radio Button
     def on_analysis_type_change():
@@ -2405,85 +1988,81 @@ def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, rele
     """, unsafe_allow_html=True)
     
     # Header mit Radio und Controls
-    with st.container(width=1600):
-        col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
-        
-        with col1:
-            # Title Placeholder (wird nach Filterung aktualisiert)
+    with st.container(width=1200, horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", gap="small"):
+        # Title Placeholder (wird nach Filterung aktualisiert)
+        with st.container(width=410):
             title_placeholder = st.empty()
 
-        with col2:
-            # Sort Dropdown (wird später mit Optionen gefüllt)
+        # Sort Dropdown (wird später mit Optionen gefüllt) - feste Breite für konsistente Ausrichtung
+        with st.container(width=160):
             sort_placeholder = st.empty()
         
-        with col3:
-            # Slot Selection (nur bei Primary Stats)
-            if st.session_state.mod_analysis_type == 'Primary Stats':
-                # CSS für größere Mod Slot Symbole (nur für dieses spezifische Control)
-                st.markdown("""
-                    <style>
-                    /* Vergrößere Symbole im Mod Slot Control - nur mit key mod_slot_segmented */
-                    .st-key-mod_slot_segmented [aria-label="button group"] [data-testid="stIconEmoji"] {
-                        font-size: 30px !important;
-                    }
-                    /* Vergrößere Markdown-Symbole - nur mit key mod_slot_segmented */
-                    .st-key-mod_slot_segmented [aria-label="button group"] [data-testid="stMarkdownContainer"] p {
-                        font-size: 30px !important;
-                        margin: 0 !important;
-                    }
-                    /* Vertikale Ausrichtung korrigieren - nur mit key mod_slot_segmented */
-                    .st-key-mod_slot_segmented [aria-label="button group"] {
-                        margin-top: -10px !important;
-                        margin-left: 10px !important;
-                    }
-                    </style>
-                """, unsafe_allow_html=True)
-                
-                # Mapping: Display Name <-> Data Key
-                slot_display_to_key = {
-                    SLOT_ARROW: SLOT_KEY_ARROW,
-                    SLOT_TRIANGLE: SLOT_KEY_TRIANGLE,
-                    SLOT_CIRCLE: SLOT_KEY_CIRCLE,
-                    SLOT_CROSS: SLOT_KEY_CROSS
+        # Slot Selection (nur bei Primary Stats)
+        if st.session_state.mod_analysis_type == 'Primary Stats':
+            # CSS für größere Mod Slot Symbole (nur für dieses spezifische Control)
+            st.markdown("""
+                <style>
+                /* Vergrößere Symbole im Mod Slot Control - nur mit key mod_slot_segmented */
+                .st-key-mod_slot_segmented [aria-label="button group"] [data-testid="stIconEmoji"] {
+                    font-size: 30px !important;
                 }
-                slot_key_to_display = {v: k for k, v in slot_display_to_key.items()}
-                
-                # Konvertiere Session State Keys zu Display Values für Default
-                default_display = [slot_key_to_display[key] for key in st.session_state.mod_slot_selection if key in slot_key_to_display]
-                
-                slot_options = [SLOT_ARROW, SLOT_TRIANGLE, SLOT_CIRCLE, SLOT_CROSS]
-                selected_slots_display = st.segmented_control(
-                    "Mod Slot",
-                    options=slot_options,
-                    default=default_display,
-                    key="mod_slot_segmented",
-                    selection_mode="multi",
-                    label_visibility="collapsed"
-                )
-                
-                # Konvertiere Display Values zurück zu Data Keys
-                selected_slots = [slot_display_to_key[disp] for disp in selected_slots_display] if selected_slots_display else []
-                
-                # Update session state nur wenn sich Werte geändert haben
-                if selected_slots != st.session_state.mod_slot_selection:
-                    st.session_state.mod_slot_selection = selected_slots
-            else:
-                selected_slots = None
-                st.markdown('<div style="height: 42px;"></div>', unsafe_allow_html=True)  # Spacer
-
-        with col4:
-            # Radio: Primary Stats vs Mod Sets
-            radio_options = ['Primary Stats', 'Mod Sets']
-            current_index = radio_options.index(st.session_state.mod_analysis_type)
-            analysis_type = st.radio(
-                "Analysis Type",
-                options=radio_options,
-                index=current_index,
-                horizontal=True,
-                key="mod_analysis_radio",
-                label_visibility="collapsed",
-                on_change=on_analysis_type_change  # Callback für sofortige Aktualisierung
+                /* Vergrößere Markdown-Symbole - nur mit key mod_slot_segmented */
+                .st-key-mod_slot_segmented [aria-label="button group"] [data-testid="stMarkdownContainer"] p {
+                    font-size: 30px !important;
+                    margin: 0 !important;
+                }
+                /* Vertikale Ausrichtung korrigieren - nur mit key mod_slot_segmented */
+                .st-key-mod_slot_segmented [aria-label="button group"] {
+                    margin-top: 3px !important;
+                    margin-left: 10px !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            # Mapping: Display Name <-> Data Key
+            slot_display_to_key = {
+                SLOT_ARROW: SLOT_KEY_ARROW,
+                SLOT_TRIANGLE: SLOT_KEY_TRIANGLE,
+                SLOT_CIRCLE: SLOT_KEY_CIRCLE,
+                SLOT_CROSS: SLOT_KEY_CROSS
+            }
+            slot_key_to_display = {v: k for k, v in slot_display_to_key.items()}
+            
+            # Konvertiere Session State Keys zu Display Values für Default
+            default_display = [slot_key_to_display[key] for key in st.session_state.mod_slot_selection if key in slot_key_to_display]
+            
+            slot_options = [SLOT_ARROW, SLOT_TRIANGLE, SLOT_CIRCLE, SLOT_CROSS]
+            selected_slots_display = st.segmented_control(
+                "Mod Slot",
+                options=slot_options,
+                default=default_display,
+                key="mod_slot_segmented",
+                selection_mode="multi",
+                label_visibility="collapsed"
             )
+            
+            # Konvertiere Display Values zurück zu Data Keys
+            selected_slots = [slot_display_to_key[disp] for disp in selected_slots_display] if selected_slots_display else []
+            
+            # Update session state nur wenn sich Werte geändert haben
+            if selected_slots != st.session_state.mod_slot_selection:
+                st.session_state.mod_slot_selection = selected_slots
+        else:
+            selected_slots = None
+            st.markdown('<div style="height: 42px;"></div>', unsafe_allow_html=True)  # Spacer
+
+        # Radio: Primary Stats vs Mod Sets
+        radio_options = ['Primary Stats', 'Mod Sets']
+        current_index = radio_options.index(st.session_state.mod_analysis_type)
+        analysis_type = st.radio(
+            "Analysis Type",
+            options=radio_options,
+            index=current_index,
+            horizontal=True,
+            key="mod_analysis_radio",
+            label_visibility="collapsed",
+            on_change=on_analysis_type_change  # Callback für sofortige Aktualisierung
+        )
     
     # Validierung
     if analysis_type == 'Primary Stats' and not selected_slots:
@@ -2491,11 +2070,28 @@ def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, rele
         return
     
     # Lade RAW Mod-Daten (gecacht, ohne Filter)
-    raw_data = get_raw_mod_data(df_guild, player_base, relevance_dict)
+    # NUR unveränderliche Spalten übergeben, damit Cache nicht bei Player-Checks invalidiert wird!
+    player_base_minimal = player_base[['AllyCode', 'Name']].copy()
+
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: get_raw_mod_data", file=sys.stderr)
+    raw_data = get_raw_mod_data(df_newest, player_base_minimal, relevance_dict)
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] After: get_raw_mod_data", file=sys.stderr)
+    print(f"Länge raw_data: {len(raw_data)}", file=sys.stderr)
+
     
     if not raw_data:
         st.warning("⚠️ No mod data found.")
         return
+    
+    # Ergänze Checked und PlayerColor aus aktuellem player_base (nach Cache!)
+    for ally_code, player_data in raw_data.items():
+        player_row = player_base[player_base['AllyCode'] == ally_code]
+        if not player_row.empty:
+            player_data['Checked'] = player_row.iloc[0]['Checked']
+            player_data['PlayerColor'] = player_row.iloc[0]['PlayerColor']
+        else:
+            player_data['Checked'] = False
+            player_data['PlayerColor'] = '#CCCCCC'
     
     # Nutze gefilterte BaseIds aus Session State (von Sidebar berechnet)
     filtered_base_ids = st.session_state.get('filtered_base_ids', [])
@@ -2539,6 +2135,7 @@ def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, rele
             options=sort_options,
             index=sort_options.index(st.session_state.mod_sort_by) if st.session_state.mod_sort_by in sort_options else 0,
             key="mod_sort_select",
+            width=150,
             label_visibility="collapsed"
         )
         st.session_state.mod_sort_by = sort_by
@@ -2599,16 +2196,14 @@ def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, rele
         stats_display_order = all_stats_sorted
     
     # Erstelle Horizontal Stacked Bar Chart
-    import plotly.graph_objects as go
-    
     # Feste Farb-Zuordnung für Stats (konsistent über Primary Stats und Mod Sets)
     STAT_COLOR_MAP = {
-        'Speed': '#FF6B6B',           # Rot - wichtigster Stat
+        'Speed': "#2632D1",           # Blau - wichtigster Stat
         'Offense': '#FFA07A',         # Orange
-        'Crit Damage': '#F7DC6F',     # Gelb
-        'Crit Chance': '#FFD700',     # Gold
-        'Health': '#98D8C8',          # Mint
-        'Protection': '#4ECDC4',      # Türkis
+        'Crit Damage': '#FFD700',     # Gold
+        'Crit Chance': '#F7DC6F',     # Gelb
+        'Health': '#4ECDC4',          # Türkis-Grün
+        'Protection': '#98D8C8',      # Mint
         'Defense': '#45B7D1',         # Blau
         'Potency': '#BB8FCE',         # Lila
         'Tenacity': '#85C1E2',        # Hellblau
@@ -2678,7 +2273,7 @@ def show_mod_distribution_tab(df_guild, compare_date, key_relevance_filter, rele
     st.plotly_chart(fig, width='stretch')
 
 
-def show_settings_tab(df):
+def show_settings_tab(df_all_dates):
     """Tab 7 - App Info & User Guide."""
     
     st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_INFO}</h3>', unsafe_allow_html=True)
@@ -2686,11 +2281,11 @@ def show_settings_tab(df):
     # Technische Info
     with st.expander("📊 **Technische Informationen**", expanded=False):
         st.markdown(f"""
-        - **Geladene CSVs:** {len(df['date'].unique())} Datenabzüge
-        - **Verfügbare Daten:** {', '.join(sorted(df['date'].unique(), reverse=True))}
-        - **Gesamt-Einträge:** {len(df):,} Zeilen
-        - **Memory:** {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
-        - **Spieler (neueste CSV):** {df[df['date'] == df['date'].max()]['AllyCode'].nunique()}
+        - **Geladene CSVs:** {len(df_all_dates['date'].unique())} Datenabzüge
+        - **Verfügbare Daten:** {', '.join(sorted(df_all_dates['date'].unique(), reverse=True))}
+        - **Gesamt-Einträge:** {len(df_all_dates):,} Zeilen
+        - **Memory:** {df_all_dates.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+        - **Spieler (neueste CSV):** {df_all_dates[df_all_dates['date'] == df_all_dates['date'].max()]['AllyCode'].nunique()}
         """)
     
     # Benutzerhandbuch
@@ -2749,7 +2344,7 @@ def show_settings_tab(df):
         - **Analyseziel:** Ist mein XYZ vernünftig gemodded oder komplett daneben?
         """)
     
-    with st.expander(f"**{TAB_RELIC_COUNT}** / **{TAB_OMICRON_COUNT}** / **{TAB_SPEED_MOD_COUNT}**", expanded=False):
+    with st.expander(f"**{TAB_PROGRESS}**", expanded=False):
         st.markdown("""
         **Vergleich von Datenexporten**
         
@@ -2781,12 +2376,12 @@ def show_settings_tab(df):
         """)
 
 
-def show_sidebar(df, guild_filter, data_info, player_name, available_dates, compare_date):
+def show_sidebar(df_newest, guild_filter, data_info, player_name, available_dates, compare_date):
     """
     Zeigt die komplette Sidebar mit allen Filtern und Controls.
     
     Args:
-        df: DataFrame mit allen Daten
+        df_newest: DataFrame mit neuesten Daten (für Filter-Berechnungen)
         guild_filter: Name der aktuellen Gilde
         data_info: String mit Info über geladene CSVs
         player_name: Name des Default-Spielers
@@ -2797,7 +2392,7 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
         Tuple: (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
                 role_filter, ability_classes_filter, filters_active)
     """
-    # Sidebar Info
+    # Sidebar Info (immer anzeigen)
     st.sidebar.markdown(f"**Guild:** {guild_filter}  \n**Data:** {data_info}  \n**Player:** {player_name}")
     
     # Button to go back to selection
@@ -2829,16 +2424,20 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
     reset_suffix = f"_{st.session_state.filter_reset_counter}"
     
     # Check if active tab is a Player tab
-    is_player_tab = st.session_state.get('active_tab', '') in [TAB_RELIC_COUNT, TAB_OMICRON_COUNT, TAB_SPEED_MOD_COUNT]
+    is_player_tab = st.session_state.get('active_tab', '') in [TAB_PROGRESS]
     
-    # Get available combat types from newest date
-    date_filter = available_dates[0]
-    df_filtered = df[df['date'] == date_filter]
-    available_combat_types = sorted(df_filtered['CombatType'].unique())
-    
-    # CombatType Filter + Key Relevance Filter
+    # OPTIMIZATION: Bei player_clicked überspringen wir teure Berechnungen!
+    player_clicked = st.session_state.get('player_clicked', False)
+      
+    # ============================================================================
+    # HAUPTLOGIK: Player Tab vs Character Tabs
+    # ============================================================================
     if is_player_tab:
-        # Key Relevance Filter alone (full width)
+        # ═══════════════════════════════════════════════════════════════════════
+        # PLAYER TAB (Progress): Minimal - nur Key Relevance Filter
+        # ═══════════════════════════════════════════════════════════════════════
+        
+        # 1. Render: Key Relevance Filter (full width)
         key_relevance_filter = st.sidebar.segmented_control(
             "Key Relevance",
             options=['👍', '👎'],
@@ -2850,18 +2449,55 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
         if key_relevance_filter != st.session_state.get('key_relevance_filter', ['👍']):
             st.session_state.key_relevance_filter = key_relevance_filter
         
+        # 2. Set: Andere Filter leer
         combat_type_filter = []
         alignment_filter = []
         categories_filter = []
         role_filter = []
         ability_classes_filter = []
+        filters_active = False
+        
+        # 3. Calculate: available_base_ids (OPTIMIZATION: aus Cache wenn player_clicked)
+        relevance_dict, _, _ = load_character_relevance_data()
+        
+        # OPTIMIZATION: available_base_ids aus Cache holen
+        if player_clicked and 'available_base_ids_cache' in st.session_state:
+            available_base_ids = st.session_state.available_base_ids_cache
+        else:
+            available_base_ids = set(df_newest[df_newest['CombatType'] == 'Character']['BaseId'].unique())
+            st.session_state.available_base_ids_cache = available_base_ids
+        
+        if key_relevance_filter:
+            if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
+                filtered_base_ids = [base_id for base_id, value in relevance_dict.items() 
+                                   if value == 'yes' and base_id in available_base_ids]
+            elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
+                filtered_base_ids = [base_id for base_id, value in relevance_dict.items() 
+                                   if value == 'no' and base_id in available_base_ids]
+            else:
+                filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
+                                   if base_id in available_base_ids]
+        else:
+            filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
+                               if base_id in available_base_ids]
+        
     else:
-        # Character tabs: CombatType + Key Relevance side by side
+        # ═══════════════════════════════════════════════════════════════════════
+        # CHARACTER TABS (Overview, Char Stats, Mod Distribution): Volle Filter
+        # ═══════════════════════════════════════════════════════════════════════
+        
+        # 1. Load: Character data (needed for all filters)
+        characters_data = load_units_data()
+        
+        # 2. Get: Newest date for filtering (from available_dates)
+        date_filter = available_dates[0]
+        
+        # 3. Render: CombatType + Key Relevance side by side
         col1, col2 = st.sidebar.columns([3, 2])
         with col1:
             combat_type_filter = st.segmented_control(
                 "Combat Type",
-                options=available_combat_types,
+                options=COMBAT_TYPES,
                 default=st.session_state.get('combat_type_filter', ['Character']),
                 key=f"combat_type_segmented{reset_suffix}",
                 selection_mode="multi",
@@ -2884,11 +2520,12 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
         
         # Filter DataFrame by CombatType
         if combat_type_filter:
-            df_filtered = df_filtered[df_filtered['CombatType'].isin(combat_type_filter)]
+            df_for_filters = df_newest[df_newest['CombatType'].isin(combat_type_filter)]
+        else:
+            df_for_filters = df_newest
         
-        # Load characters data for dynamic filters
-        characters_data = load_units_data()
-        available_base_ids = set(df_filtered['BaseId'].unique())
+        # Filter characters data for dynamic filters
+        available_base_ids = set(df_for_filters['BaseId'].unique())
         characters_data_filtered = [char for char in characters_data if char.get('base_id') in available_base_ids]
         
         # Collect all available options
@@ -3014,47 +2651,24 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
             if 'selected_character_tab2' in st.session_state:
                 del st.session_state.selected_character_tab2
             st.rerun()
-    
-    # Check if any filters are active
-    filters_active = bool(alignment_filter or categories_filter or role_filter or ability_classes_filter)
-    
-    # === NEUE ZENTRALE LOGIK: Berechne gefilterte BaseIds ===
-    # Diese Liste wird von Overview UND Mod Distribution verwendet!
-    characters_data = load_units_data()
-    relevance_dict, _, _ = load_character_relevance_data()
-    
-    # Erstelle Set der BaseIds die tatsächlich in den Spielerdaten vorhanden sind
-    # NUR CHARACTERS (combat_type=1), KEINE SHIPS!
-    available_base_ids = set(df[df['CombatType'] == 'Character']['BaseId'].unique())
-    
-    if is_player_tab:
-        # Player Tabs: Nur Key Relevance Filter
-        # Speichere Liste von BaseIds basierend auf Key Relevance
-        # WICHTIG: Nur Characters die auch in den Spielerdaten vorhanden sind!
-        if key_relevance_filter:
-            if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-                # Nur Key Characters die auch vorhanden sind
-                filtered_base_ids = [base_id for base_id, value in relevance_dict.items() 
-                                   if value == 'yes' and base_id in available_base_ids]
-            elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-                # Nur Non-Key Characters die auch vorhanden sind
-                filtered_base_ids = [base_id for base_id, value in relevance_dict.items() 
-                                   if value == 'no' and base_id in available_base_ids]
-            else:
-                # Beide oder keine Auswahl = Alle verfügbaren
-                filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
-                                   if base_id in available_base_ids]
+        
+        # 4. Check: Sind Filter aktiv?
+        filters_active = bool(alignment_filter or categories_filter or role_filter or ability_classes_filter)
+        
+        # 5. Calculate: available_base_ids (OPTIMIZATION: aus Cache wenn player_clicked)
+        relevance_dict, _, _ = load_character_relevance_data()
+        
+        if player_clicked and 'available_base_ids_cache' in st.session_state:
+            available_base_ids = st.session_state.available_base_ids_cache
         else:
-            # Keine Filter = Alle verfügbaren
-            filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
-                               if base_id in available_base_ids]
-    else:
-        # Character Tabs: Alle Filter anwenden
-        # Filtere zuerst NUR Characters (combat_type=1), keine Ships!
+            available_base_ids = set(df_newest[df_newest['CombatType'] == 'Character']['BaseId'].unique())
+            st.session_state.available_base_ids_cache = available_base_ids
+        
+        # 6. Calculate: filtered_base_ids (mit ALLEN Filtern)
         characters_only = [char for char in characters_data if char.get('combat_type') == 1]
         
         filtered_characters = apply_filters(
-            characters_only,  # NUR Characters!
+            characters_only,
             alignment_filter, 
             categories_filter, 
             role_filter, 
@@ -3064,41 +2678,42 @@ def show_sidebar(df, guild_filter, data_info, player_name, available_dates, comp
             categories_use_and=st.session_state.get('categories_use_and', False),
             ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
         )
-        # Zusätzliche Sicherheit: Nur BaseIds die auch in available_base_ids sind
         filtered_base_ids = [char['base_id'] for char in filtered_characters 
                            if char['base_id'] in available_base_ids]
+        
+        # 7. Render: Character Selection for Tab 2
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("**☯ Character Selection:**")
+        
+        if filters_active:
+            available_characters_tab2 = [(char['name'], char['base_id']) 
+                                         for char in characters_data 
+                                         if char['base_id'] in filtered_base_ids]
+        else:
+            available_characters_tab2 = [(char['name'], char['base_id']) for char in characters_data]
+        
+        character_names_tab2 = [name for name, base_id in available_characters_tab2]
+        
+        if character_names_tab2:
+            selected_character_tab2 = st.sidebar.selectbox(
+                "Character for Tab 2:",
+                character_names_tab2,
+                key=f"tab2_character_select{reset_suffix}"
+            )
+            
+            if 'selected_character_tab2' not in st.session_state:
+                st.session_state.selected_character_tab2 = selected_character_tab2
+            else:
+                if st.session_state.selected_character_tab2 != selected_character_tab2:
+                    st.session_state.selected_character_tab2 = selected_character_tab2
+    
+    # ============================================================================
+    # GEMEINSAME LOGIK: Speichere Ergebnisse
+    # ============================================================================
     
     # Speichere in Session State - wird von allen Tabs verwendet!
     st.session_state.filtered_base_ids = filtered_base_ids
     st.session_state.filters_active = filters_active
-    
-    st.sidebar.markdown("---")
-    
-    # Character Selection for Tab 2
-    st.sidebar.markdown("**☯ Character Selection:**")
-    
-    # Nutze gefilterte Characters für Selection
-    if filters_active:
-        available_characters_tab2 = [(char['name'], char['base_id']) 
-                                     for char in characters_data 
-                                     if char['base_id'] in filtered_base_ids]
-    else:
-        available_characters_tab2 = [(char['name'], char['base_id']) for char in characters_data]
-    
-    character_names_tab2 = [name for name, base_id in available_characters_tab2]
-    
-    if character_names_tab2:
-        selected_character_tab2 = st.sidebar.selectbox(
-            "Character for Tab 2:",
-            character_names_tab2,
-            key=f"tab2_character_select{reset_suffix}"
-        )
-        
-        if 'selected_character_tab2' not in st.session_state:
-            st.session_state.selected_character_tab2 = selected_character_tab2
-        else:
-            if st.session_state.selected_character_tab2 != selected_character_tab2:
-                st.session_state.selected_character_tab2 = selected_character_tab2
     
     # Uncheck All button
     st.sidebar.markdown("---")
@@ -3126,10 +2741,8 @@ def show_tab_menu():
     # Tab options
     tabs = [
         TAB_OVERVIEW,
+        TAB_PROGRESS,
         TAB_CHAR_STATS,
-        TAB_RELIC_COUNT,
-        TAB_OMICRON_COUNT,
-        TAB_SPEED_MOD_COUNT,
         TAB_MOD_DISTRIBUTION,
         TAB_INFO
     ]
@@ -3140,7 +2753,7 @@ def show_tab_menu():
     
     # Create container with columns for buttons
     with st.container():
-        cols = st.columns(7, gap="small")
+        cols = st.columns(5, gap="small")
         
         for i, tab in enumerate(tabs):
             with cols[i]:
@@ -3154,13 +2767,15 @@ def show_tab_menu():
                     type=button_type,
                     on_click=set_tab,
                     args=(tab,),
-                    use_container_width=True
+                    width='stretch'
                 )
     
     return st.session_state.active_tab
 
 
 def main():
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Start: main", file=sys.stderr)
+
     st.set_page_config(
         layout="wide",
         initial_sidebar_state="expanded",
@@ -3223,7 +2838,7 @@ def main():
     
     # Ab hier: Analysis-Modus (nach Start-Button)
     
-    # Lade Daten basierend auf Auswahl
+    # Hole gecachte Daten aus Session State (wurden beim Start geladen!)
     guild_filter = st.session_state.selected_guild
     selected_dates = st.session_state.selected_dates
 
@@ -3231,22 +2846,17 @@ def main():
     has_upload = 'uploaded_csv_df' in st.session_state
     data_info = f"{len(selected_dates)} CSV(s)" + (" + 1 Upload" if has_upload else "")
     
-    # Bereite Upload-Daten für Cache vor (falls vorhanden)
-    upload_csv_data = None
-    upload_date = None
-    upload_guild = None
-    if has_upload:
-        # Nutze bereits gespeicherten CSV-String (wurde beim Upload erstellt!)
-        upload_csv_data = st.session_state.get('uploaded_csv_data', None)
-        upload_date = st.session_state.get('uploaded_csv_date', datetime.now().strftime('%Y-%m-%d'))
-        upload_guild = st.session_state.get('uploaded_csv_guild', None)
-    
-    # Load data (CACHED - Upload stored in cache!)
-    df = get_final_df(guild_filter, tuple(selected_dates), upload_csv_data, upload_date, upload_guild)
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] BEFORE: Load cached DataFrames", file=sys.stderr)
 
-    if df is None or df.empty:
+    # Lade gecachte DataFrames (wurden beim Start berechnet - KEIN Pandas mehr!)
+    df_newest = st.session_state.get('df_newest_cached', None)
+    df_all_dates = st.session_state.get('df_all_dates_cached', None)
+
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] AFTER: Load cached DataFrames", file=sys.stderr)
+
+    if df_newest is None or df_newest.empty or df_all_dates is None:
         st.error("❌ Error loading data!")
-        if df is not None and df.empty:
+        if df_newest is not None and df_newest.empty:
             st.error("🚫 Access denied: This guild is not in the repository!")
             st.info("💡 Only guilds from BΛ Bataillon may use this tool.")
         if st.button("↩️ Back to selection"):
@@ -3255,23 +2865,10 @@ def main():
             st.rerun()
         return
     
-    # Get player name for sidebar info (need to lookup from df before player_base_global exists)
-    default_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
-    available_dates_temp = sorted(df['date'].unique(), reverse=True)
-    df_newest_temp = df[df['date'] == available_dates_temp[0]]
-    player_name_match = df_newest_temp[df_newest_temp['AllyCode'].astype(str) == default_ally_code]['Name'].unique()
-    player_name = player_name_match[0] if len(player_name_match) > 0 else default_ally_code
-    
-    # Verfügbare Daten aus geladenen CSVs
-    available_dates = sorted(df['date'].unique(), reverse=True)
-    date_filter = available_dates[0]  # Neuestes Datum
-    
-    # Filtere DataFrame nach Date (Guild ist bereits gefiltert durch get_final_df!)
-    df_filtered = df[df['date'] == date_filter]
-    
-    if df_filtered.empty:
-        st.error("❌ No data found for the selected date.")
-        return
+    # Nutze gecachte Werte aus Session State (wurden beim Start berechnet!)
+    player_name = st.session_state.get('player_name_cached', st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE))
+    available_dates = st.session_state.get('available_dates_cached', sorted(df_all_dates['date'].unique(), reverse=True))
+    date_filter = st.session_state.get('newest_date_cached', available_dates[0])
     
     # Lade Charakterdaten und Schiffsdaten für dynamische Filter
     characters_data = load_units_data()
@@ -3279,15 +2876,18 @@ def main():
     # ============================================================================
     # TAB NAVIGATION - Button-based, clean and fast!
     # ============================================================================
-    active_tab = show_tab_menu()
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: show_tab_menu", file=sys.stderr)
+    show_tab_menu()
     
     # ============================================================================
     # SIDEBAR - Clean function with all filters and controls
     # ============================================================================
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: show_sidebar", file=sys.stderr)
     (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
      role_filter, ability_classes_filter, filters_active) = show_sidebar(
-        df, guild_filter, data_info, player_name, available_dates, available_dates[1] if len(available_dates) >= 2 else available_dates[0]
+        df_newest, guild_filter, data_info, player_name, available_dates, available_dates[1] if len(available_dates) >= 2 else available_dates[0]
     )
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] After: show_sidebar", file=sys.stderr)
     
     # Lade Charakterdaten für Tab-Content
     characters_data = load_units_data()
@@ -3295,6 +2895,7 @@ def main():
     relic_costs = load_relic_costs()
     
     # Filter anwenden für gefilterte Character-Liste
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: apply_filters", file=sys.stderr)
     filtered_characters = apply_filters(
         characters_data, 
         alignment_filter, 
@@ -3306,22 +2907,23 @@ def main():
         categories_use_and=st.session_state.get('categories_use_and', False),
         ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
     )
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] After: apply_filters", file=sys.stderr)
     
     # GLOBAL PLAYER_BASE in Session State - initialize ONCE!
     # This is the central data structure for ALL Player tabs
-    # Reinitialize if guild OR ally_code changed
+    # Reinitialize if guild OR ally_code changed OR player list changed (upload!)
     current_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
+    current_player_count = len(df_newest['AllyCode'].unique())  # Detect new players from upload!
+    
     needs_reinit = (
         'player_base_global' not in st.session_state or 
         st.session_state.get('current_guild') != guild_filter or
-        st.session_state.get('current_ally_code') != current_ally_code
+        st.session_state.get('current_ally_code') != current_ally_code or
+        st.session_state.get('current_player_count') != current_player_count  # New players?
     )
     
     if needs_reinit:
-        # Use df (already filtered by Guild!)
-        available_dates_list = sorted(df['date'].unique(), reverse=True)
-        newest_date = available_dates_list[0]
-        df_newest = df[df['date'] == newest_date]
+        # Use df_newest (already filtered by Guild AND newest date, includes upload!)
         player_base = df_newest[['AllyCode', 'Name']].drop_duplicates().copy()
         player_base = player_base.sort_values('Name').reset_index(drop=True)
         
@@ -3341,29 +2943,32 @@ def main():
         st.session_state.player_base_global = player_base
         st.session_state.current_guild = guild_filter
         st.session_state.current_ally_code = current_ally_code
+        st.session_state.current_player_count = current_player_count  # Track player count!
     
     # Get global player_base (shared across all tabs!)
     player_base = st.session_state.player_base_global
-    
+
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: TAB CONTENT RENDERING", file=sys.stderr)
     # ============================================================================
     # TAB CONTENT RENDERING
     # ============================================================================
     # CONDITIONAL RENDERING - only active tab is executed!
     # Note: active_tab was already updated before sidebar rendering
     if st.session_state.active_tab == TAB_OVERVIEW:
-        show_character_overview(df_filtered, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
+        show_character_overview(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
+    elif st.session_state.active_tab == TAB_PROGRESS:
+        show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevance_dict)
     elif st.session_state.active_tab == TAB_CHAR_STATS:
-        show_analytics_tab(df_filtered, filtered_characters, characters_data, filters_active)
-    elif st.session_state.active_tab == TAB_RELIC_COUNT:
-        show_player_overview_tab(df, compare_date, key_relevance_filter, relevance_dict)
-    elif st.session_state.active_tab == TAB_OMICRON_COUNT:
-        show_player_omicrons_tab(df, compare_date, key_relevance_filter, relevance_dict)
-    elif st.session_state.active_tab == TAB_SPEED_MOD_COUNT:
-        show_player_speed_mods_tab(df, compare_date, key_relevance_filter, relevance_dict)
+        show_analytics_tab(df_newest, filtered_characters, characters_data, filters_active)
     elif st.session_state.active_tab == TAB_MOD_DISTRIBUTION:
-        show_mod_distribution_tab(df, compare_date, key_relevance_filter, relevance_dict)
+        show_mod_distribution_tab(df_newest, compare_date, key_relevance_filter, relevance_dict)
     elif st.session_state.active_tab == TAB_INFO:
-        show_settings_tab(df)
+        show_settings_tab(df_all_dates)
+    
+    # Reset player_clicked Flag für nächsten Run
+    st.session_state.player_clicked = False
+    
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] End: main() completed", file=sys.stderr)
 
 if __name__ == "__main__":
     main()
