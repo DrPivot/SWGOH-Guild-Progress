@@ -1340,8 +1340,6 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
                     'Checked'
                 ] = not current_state
                 
-                print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Callback: Player toggled in Char Stats", file=sys.stderr)
-    
     # Tabelle mit on_select
     st.dataframe(
         styled_df,
@@ -1959,7 +1957,6 @@ def filter_and_aggregate_mod_data_simple(raw_data, analysis_type, selected_slots
 
 
 def show_mod_distribution_tab(df_newest, compare_date, key_relevance_filter, relevance_dict):
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Start: show_mod_distribution_tab", file=sys.stderr)
     
     # Callback für Radio Button
     def on_analysis_type_change():
@@ -2073,12 +2070,8 @@ def show_mod_distribution_tab(df_newest, compare_date, key_relevance_filter, rel
     # NUR unveränderliche Spalten übergeben, damit Cache nicht bei Player-Checks invalidiert wird!
     player_base_minimal = player_base[['AllyCode', 'Name']].copy()
 
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: get_raw_mod_data", file=sys.stderr)
     raw_data = get_raw_mod_data(df_newest, player_base_minimal, relevance_dict)
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] After: get_raw_mod_data", file=sys.stderr)
-    print(f"Länge raw_data: {len(raw_data)}", file=sys.stderr)
 
-    
     if not raw_data:
         st.warning("⚠️ No mod data found.")
         return
@@ -2774,16 +2767,15 @@ def show_tab_menu():
 
 
 def main():
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Start: main", file=sys.stderr)
 
     st.set_page_config(
         layout="wide",
-        initial_sidebar_state="expanded",
+        initial_sidebar_state="expanded",  # Sidebar standardmäßig geöffnet
         menu_items={
             'About': "SWGOH Guild Roster Analyzer by DrPivot"
         }
-    )
-    
+    )   
+   
     # Custom CSS for better layout   
     st.markdown(f"""
         <style>
@@ -2845,14 +2837,10 @@ def main():
     # Zeige ausgewählte Guild, Dates und Default Player
     has_upload = 'uploaded_csv_df' in st.session_state
     data_info = f"{len(selected_dates)} CSV(s)" + (" + 1 Upload" if has_upload else "")
-    
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] BEFORE: Load cached DataFrames", file=sys.stderr)
 
     # Lade gecachte DataFrames (wurden beim Start berechnet - KEIN Pandas mehr!)
     df_newest = st.session_state.get('df_newest_cached', None)
     df_all_dates = st.session_state.get('df_all_dates_cached', None)
-
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] AFTER: Load cached DataFrames", file=sys.stderr)
 
     if df_newest is None or df_newest.empty or df_all_dates is None:
         st.error("❌ Error loading data!")
@@ -2876,18 +2864,15 @@ def main():
     # ============================================================================
     # TAB NAVIGATION - Button-based, clean and fast!
     # ============================================================================
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: show_tab_menu", file=sys.stderr)
     show_tab_menu()
     
     # ============================================================================
     # SIDEBAR - Clean function with all filters and controls
     # ============================================================================
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: show_sidebar", file=sys.stderr)
     (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
      role_filter, ability_classes_filter, filters_active) = show_sidebar(
         df_newest, guild_filter, data_info, player_name, available_dates, available_dates[1] if len(available_dates) >= 2 else available_dates[0]
     )
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] After: show_sidebar", file=sys.stderr)
     
     # Lade Charakterdaten für Tab-Content
     characters_data = load_units_data()
@@ -2895,7 +2880,6 @@ def main():
     relic_costs = load_relic_costs()
     
     # Filter anwenden für gefilterte Character-Liste
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: apply_filters", file=sys.stderr)
     filtered_characters = apply_filters(
         characters_data, 
         alignment_filter, 
@@ -2907,7 +2891,6 @@ def main():
         categories_use_and=st.session_state.get('categories_use_and', False),
         ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
     )
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] After: apply_filters", file=sys.stderr)
     
     # GLOBAL PLAYER_BASE in Session State - initialize ONCE!
     # This is the central data structure for ALL Player tabs
@@ -2948,7 +2931,6 @@ def main():
     # Get global player_base (shared across all tabs!)
     player_base = st.session_state.player_base_global
 
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Before: TAB CONTENT RENDERING", file=sys.stderr)
     # ============================================================================
     # TAB CONTENT RENDERING
     # ============================================================================
@@ -2967,8 +2949,6 @@ def main():
     
     # Reset player_clicked Flag für nächsten Run
     st.session_state.player_clicked = False
-    
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] End: main() completed", file=sys.stderr)
 
 if __name__ == "__main__":
     main()
