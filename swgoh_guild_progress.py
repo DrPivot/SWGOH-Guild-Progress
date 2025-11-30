@@ -37,9 +37,10 @@ PLAYER_COLOR_PALETTE = [
 ]
 
 # Tab Names as Constants
-TAB_OVERVIEW = "📑 Overview"
-TAB_CHAR_STATS = "📊 Char Stats"
+TAB_OVERVIEW = "🔮 Guild Relics"
+TAB_STATS = "📑 Guild Stats"
 TAB_PROGRESS = "📈 Progress"
+TAB_CHAR_STATS = "📊 Char Stats"
 TAB_MOD_DISTRIBUTION = "⚖️ Mod Distribution"
 TAB_INFO = "ℹ️ App-Info"
 
@@ -520,7 +521,7 @@ def show_start_screen():
         
         # Validate: must be exactly 9 digits
         if ally_code_clean and len(ally_code_clean) == 9:
-            st.session_state.default_ally_code = ally_code_clean
+            st.session_state.default_ally_code = int(ally_code_clean)
             # Update URL wenn Wert sich ändert
             if ally_code_clean != default_ally_code_url:
                 st.query_params["ally_code"] = ally_code_clean
@@ -528,11 +529,11 @@ def show_start_screen():
             st.warning(f"⚠️ AllyCode must be 9 digits (found {len(ally_code_clean)})")
             # Use fallback if invalid
             if 'default_ally_code' not in st.session_state:
-                st.session_state.default_ally_code = DEFAULT_ALLY_CODE
+                st.session_state.default_ally_code = int(DEFAULT_ALLY_CODE)
         else:
             # Empty input - use fallback
             if 'default_ally_code' not in st.session_state:
-                st.session_state.default_ally_code = DEFAULT_ALLY_CODE
+                st.session_state.default_ally_code = int(DEFAULT_ALLY_CODE)
     
     st.markdown("---")
     
@@ -774,9 +775,9 @@ def show_start_screen():
                             newest_date = available_dates_list[0]
                             
                             # Player Name lookup aus df_newest
-                            default_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
-                            player_name_match = df_newest_temp[df_newest_temp['AllyCode'].astype(str) == default_ally_code]['Name'].unique()
-                            player_name = player_name_match[0] if len(player_name_match) > 0 else default_ally_code
+                            default_ally_code = st.session_state.get('default_ally_code', int(DEFAULT_ALLY_CODE))
+                            player_name_match = df_newest_temp[df_newest_temp['AllyCode'] == default_ally_code]['Name'].unique()
+                            player_name = player_name_match[0] if len(player_name_match) > 0 else str(default_ally_code)
                             
                             # Speichere BEIDE DataFrames in Session State (für main())
                             st.session_state.df_newest_cached = df_newest_temp
@@ -833,10 +834,10 @@ def apply_filters(characters_data, alignment_filter, categories_filter, role_fil
     
     return filtered
 
-def show_character_overview(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter=None, relevance_dict=None, relic_rec_dict=None, notes_dict=None, relic_costs=None):
-    # === OVERVIEW zeigt Characters UND/ODER Ships basierend auf Combat Type Filter! ===
+def show_guild_relics(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter=None, relevance_dict=None, relic_rec_dict=None, notes_dict=None, relic_costs=None):
+    # === show_guild_relics zeigt Characters UND/ODER Ships basierend auf Combat Type Filter! ===
     # filtered_base_ids aus Session State enthält nur Characters (für Mod Distribution)
-    # Overview braucht separate Logik für Ships und muss Combat Type Filter beachten!
+    # show_guild_relics braucht separate Logik für Ships und muss Combat Type Filter beachten!
     
     # Hole Combat Type Filter aus Session State
     combat_type_filter = st.session_state.get('combat_type_filter', ['Character'])
@@ -905,10 +906,10 @@ def show_character_overview(df_newest, filtered_characters, characters_data, fil
     base_id_to_name = {char['base_id']: char['name'] for char in characters_data}
     
     # Get default_ally_code from session state for Player relic level
-    default_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
+    default_ally_code = st.session_state.get('default_ally_code', int(DEFAULT_ALLY_CODE))
     
     # Filter df_filtered für den ausgewählten Spieler (Characters UND Ships!)
-    df_player = df_filtered[df_filtered['AllyCode'].astype(str) == default_ally_code]
+    df_player = df_filtered[df_filtered['AllyCode'] == default_ally_code]
     
     # Erstelle Mapping: BaseId -> RelicLevel für den ausgewählten Spieler
     player_relic_dict = dict(zip(df_player['BaseId'], df_player['RelicLevel']))
@@ -931,8 +932,8 @@ def show_character_overview(df_newest, filtered_characters, characters_data, fil
     
     char_overview = pd.DataFrame({
         'Character': [base_id_to_name.get(base_id, base_id) for base_id in base_ids],
-        'Player relic': [player_relic_dict.get(base_id, None) for base_id in base_ids],
-        'Recommended': [relic_rec_dict.get(base_id, None) if relic_rec_dict else None for base_id in base_ids],
+        'Player': [player_relic_dict.get(base_id, None) for base_id in base_ids],
+        'Target': [relic_rec_dict.get(base_id, None) if relic_rec_dict else None for base_id in base_ids],
         'Δ': [
             (rec - player if rec and player and rec > player else 0)
             for rec, player in zip(
@@ -1042,6 +1043,251 @@ def show_character_overview(df_newest, filtered_characters, characters_data, fil
             else:
                 st.warning("⚠️ Relic cost data not available")
 
+
+def show_guild_stats(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter=None, relevance_dict=None, relic_rec_dict=None, notes_dict=None, relic_costs=None):
+    """Tab Guild Stats - zeigt statistische Kennzahlen für einen ausgewählten Stat."""
+    
+    # Hole Combat Type Filter aus Session State
+    combat_type_filter = st.session_state.get('combat_type_filter', ['Character'])
+    
+    # Bestimme welche Combat Types angezeigt werden sollen
+    show_characters = 'Character' in combat_type_filter or not combat_type_filter
+    show_ships = 'Ship' in combat_type_filter or not combat_type_filter
+    
+    # Filter-Logik: Nutze gefilterte BaseIds aus Session State
+    filtered_base_ids_chars = st.session_state.get('filtered_base_ids', []) if show_characters else []
+    filtered_base_ids_ships = st.session_state.get('filtered_ship_base_ids', []) if show_ships else []
+    
+    # Kombiniere Characters und Ships
+    all_filtered_base_ids = filtered_base_ids_chars + filtered_base_ids_ships
+    
+    # Filtere DataFrame
+    if all_filtered_base_ids:
+        df_filtered = df_newest[df_newest['BaseId'].isin(all_filtered_base_ids)]
+    else:
+        df_filtered = df_newest[df_newest['BaseId'].isin([])]
+    
+    if df_filtered.empty:
+        st.warning("❌ No data found for the selected filters.")
+        return
+    
+    # Erstelle Mapping: BaseId -> Name
+    base_id_to_name = {char['base_id']: char['name'] for char in characters_data}
+    
+    # Header mit Titel und Stat-Auswahl
+    with st.container(horizontal=True, gap="medium", width =600):
+        # Titel (linksbündig)
+        st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_STATS}</h3>', unsafe_allow_html=True)
+        
+        # Stat-Auswahl (rechtsbündig)
+        stats_options = ['Speed', 'Health', 'Protection', 'Health+Protection', 'Effective H+P', 'Armor', 'Damage', 'CritChance', 'CritDamage', 'Potency', 'Tenacity']
+        
+        # Initialize Session State
+        if 'selected_stat_guild_stats' not in st.session_state:
+            st.session_state.selected_stat_guild_stats = 'Speed'
+        
+        selected_stat = st.selectbox(
+            "Select Stat:",
+            options=stats_options,
+            index=stats_options.index(st.session_state.selected_stat_guild_stats),
+            key='stat_selectbox_guild_stats',
+            label_visibility='collapsed'
+        )
+        
+        # Update Session State
+        st.session_state.selected_stat_guild_stats = selected_stat
+    
+    # Get default_ally_code from session state
+    default_ally_code = st.session_state.get('default_ally_code', int(DEFAULT_ALLY_CODE))
+    
+    # Berechne Statistiken pro BaseId für den ausgewählten Stat
+    stats_per_unit = []
+    
+    for base_id in all_filtered_base_ids:
+        df_unit = df_filtered[df_filtered['BaseId'] == base_id]
+        
+        if df_unit.empty:
+            continue
+        
+        # Berechne spezielle Stats falls ausgewählt
+        if selected_stat == 'Health+Protection':
+            # Summe aus Health und Protection
+            if 'Health' in df_unit.columns and 'Protection' in df_unit.columns:
+                stat_values = (df_unit['Health'] + df_unit['Protection']).dropna()
+            else:
+                continue
+        elif selected_stat == 'Effective H+P':
+            # Effective H+P = (Health + Protection) / (1.0 - Armor)
+            if 'Health' in df_unit.columns and 'Protection' in df_unit.columns and 'Armor' in df_unit.columns:
+                # Armor ist in Prozent (z.B. 45.5), daher durch 100 teilen
+                armor_decimal = df_unit['Armor'] / 100.0
+                stat_values = ((df_unit['Health'] + df_unit['Protection']) / (1.0 - armor_decimal)).dropna()
+            else:
+                continue
+        else:
+            # Normaler Stat aus Spalte
+            if selected_stat not in df_unit.columns:
+                continue
+            stat_values = df_unit[selected_stat].dropna()
+        
+        if len(stat_values) == 0:
+            continue
+        
+        # Statistiken berechnen
+        avg_val = stat_values.mean()
+        max_val = stat_values.max()
+        median_val = stat_values.median()
+        
+        # Player-Wert (Stat + Relic)
+        player_row = df_unit[df_unit['AllyCode'] == default_ally_code]
+        if not player_row.empty:
+            if selected_stat == 'Health+Protection':
+                if 'Health' in player_row.columns and 'Protection' in player_row.columns:
+                    player_val = player_row['Health'].iloc[0] + player_row['Protection'].iloc[0]
+                else:
+                    player_val = None
+            elif selected_stat == 'Effective H+P':
+                if 'Health' in player_row.columns and 'Protection' in player_row.columns and 'Armor' in player_row.columns:
+                    armor_decimal = player_row['Armor'].iloc[0] / 100.0
+                    player_val = (player_row['Health'].iloc[0] + player_row['Protection'].iloc[0]) / (1.0 - armor_decimal)
+                else:
+                    player_val = None
+            else:
+                player_val = player_row[selected_stat].iloc[0] if selected_stat in player_row.columns else None
+            player_relic = player_row['RelicLevel'].iloc[0] if 'RelicLevel' in player_row.columns else None
+        else:
+            player_val = None
+            player_relic = None
+        
+        # Median Relic
+        relic_values = df_unit['RelicLevel'].dropna() if 'RelicLevel' in df_unit.columns else pd.Series([])
+        median_relic = relic_values.median() if len(relic_values) > 0 else None
+        
+        # Delta und Delta%
+        if player_val is not None and not pd.isna(player_val):
+            delta = player_val - median_val
+            delta_pct = (delta / median_val * 100) if median_val != 0 else 0
+        else:
+            delta = None
+            delta_pct = None
+        
+        stats_per_unit.append({
+            'Character': base_id_to_name.get(base_id, base_id),
+            'Player': player_val,
+            'Median': median_val,
+            'Δ': delta,
+            'Δ%': delta_pct,
+            'Relic Player': player_relic,
+            'Relic Median': median_relic,
+            'Max': max_val,
+            'Avg': avg_val
+        })
+    
+    # DataFrame erstellen
+    stats_df = pd.DataFrame(stats_per_unit)
+    
+    if stats_df.empty:
+        st.warning("❌ No statistics available for the selected stat.")
+        return
+    
+    # Sortiere absteigend nach ausgewähltem Stat (Player-Spalte)
+    stats_df = stats_df.sort_values('Δ', ascending=True, na_position='last')
+    
+    # Runde Health/Protection und berechnete Stats auf ganze Zahlen
+    large_number_columns = {'Health', 'Protection', 'Health+Protection', 'Effective H+P'}
+    if selected_stat in large_number_columns:
+        numeric_cols = ['Player', 'Median', 'Δ', 'Avg', 'Max']
+        for col in numeric_cols:
+            if col in stats_df.columns:
+                stats_df[col] = stats_df[col].round(0)
+    
+    # Formatierung basierend auf Stat-Typ
+    percent_columns = {'CritDamage', 'Potency', 'Tenacity', 'CritChance', 'Armor'}
+    
+    # Column Config
+    column_config = {
+        'Character': st.column_config.TextColumn(width=200),
+        'Relic Player': st.column_config.NumberColumn(format="%.0f", width=80),
+        'Relic Median': st.column_config.NumberColumn(format="%.0f", width=80)
+    }
+    
+    # Formatiere alle numerischen Spalten
+    for col in stats_df.columns:
+        if col not in ['Character', 'Relic Player', 'Relic Median']:  # Relic-Spalten schon definiert
+            if selected_stat in percent_columns or col == 'Δ%':
+                # Prozent-Format
+                column_config[col] = st.column_config.NumberColumn(
+                    format="%.1f%%",
+                    width=100
+                )
+            elif selected_stat in large_number_columns:
+                # Große Zahlen mit Tausender-Trennzeichen
+                column_config[col] = st.column_config.NumberColumn(
+                    format="localized",
+                    width=100
+                )
+            else:
+                # Standard-Format mit 0 Nachkommastellen
+                column_config[col] = st.column_config.NumberColumn(
+                    format="%.0f",
+                    width=100
+                )
+    
+    # on_select Callback für Character-Auswahl
+    def on_character_cell_select():
+        """Callback wenn Character-Zelle angeklickt wird - wechselt zu Char Stats Tab."""
+        selection = st.session_state.guild_stats_table_selection
+        
+        # Zugriff auf selection dict
+        if hasattr(selection, 'selection'):
+            sel_dict = selection.selection
+        elif isinstance(selection, dict):
+            sel_dict = selection.get('selection', {})
+        else:
+            return
+        
+        selected_cells = sel_dict.get('cells', [])
+        
+        # Extrahiere Zeilen-Index aus erster Zelle
+        if selected_cells:
+            cell = selected_cells[0]
+            if isinstance(cell, (list, tuple)) and len(cell) >= 2:
+                row_idx = cell[0]
+                col_name = cell[1]
+            elif isinstance(cell, dict):
+                row_idx = cell.get('row', None)
+                col_name = cell.get('column', None)
+            else:
+                return
+            
+            # Nur bei Click auf Character-Spalte reagieren
+            if col_name != 'Character':
+                return
+            
+            character_name = stats_df.iloc[row_idx]['Character']
+            
+            # Setze character_from_stats_table (wird von Sidebar übernommen)
+            st.session_state.character_from_stats_table = character_name
+            
+            # Wechsle zu Char Stats Tab (kein rerun - passiert automatisch!)
+            st.session_state.active_tab = TAB_CHAR_STATS
+    
+    # Tabelle anzeigen
+    st.dataframe(
+        stats_df,
+        hide_index=True,
+        width='content',
+        height=1100,
+        row_height=21,
+        column_config=column_config,
+        selection_mode="single-cell",
+        on_select=on_character_cell_select,
+        key="guild_stats_table_selection"
+    )
+    
+    return
+
+
 def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_active):
     """Tab 2 - Character Stats mit Multi-Player Vergleich via Checkboxen."""
     
@@ -1101,10 +1347,17 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
         b = int(hex_color[4:6], 16)
         return f'rgba({r},{g},{b},{opacity})'
     
+    image_width = 194  # 150px Chart + 44px Padding/Margin
+    diagram_width = 100  # Mindestens 2px pro Balken bei 50 Spielern
+    diagramcontainer_width = image_width + (diagram_width + 10) * len(stats_columns)  # 10px gap
+    column_name_width = 200  # Spaltenbreite für Namen (Character Bild + Padding)
+    column_stat_width = diagram_width + 10  # Spaltenbreite für jeden Stat
+    table_width = column_name_width + column_stat_width * len(stats_columns) + 10
+
     # Diagramme in einem Container mit fester Breite (Player: 200px -6px Ausrichtung + 10 Spalten mit 150px + 10px gap)
-    with st.container(width=1794, gap="small"):
+    with st.container(width=diagramcontainer_width, gap="small"):
         # Charts mit perfekter Ausrichtung zur nachfolgende Tabelle anzeigen
-        chart_cols = st.columns([194] + [150] * 10, gap="small")
+        chart_cols = st.columns([image_width] + [diagram_width] * 10, gap='small')
 
         # Erstelle Lookup-Dictionaries EINMAL für ALLE Charts (statt 10x pro Chart!)
         player_checked = dict(zip(player_base['Name'], player_base['Checked']))
@@ -1160,11 +1413,16 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
             fig.add_trace(go.Bar(
                 x=list(range(len(stat_data))),  # Index statt Namen
                 y=stat_data[stat],
-                marker_color=colors,  # Checked/selected/default colors
+                marker=dict(
+                    color=colors,  # Checked/selected/default colors
+                    line=dict(width=0)  # KEIN Rahmen um Balken - spart Platz!
+                ),
+                width=1,  # Balkenbreite relativ zu x-Achsen-Einheit (1 = 100% = kein Gap)
                 showlegend=False,
                 hovertext=hover_texts,
                 hoverinfo='text'  # Zeige nur den custom text
             ))
+
             # Graue Linie über den Balken
             fig.add_trace(go.Scatter(
                 x=list(range(len(stat_data))),
@@ -1175,6 +1433,7 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
                 hoverinfo='skip'  # Kein Hover für die Linie
             ))
             
+            
             fig.update_layout(
                 xaxis={
                     'showticklabels': False,  # Keine x-Achsen Namen
@@ -1182,49 +1441,34 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
                     'showgrid': False,
                     'zeroline': False,
                     'fixedrange': True,
-                    'range': [-0.5, len(stat_data) + 0.5]  # Symmetrische Range mit Padding
+                    'range': [-3, 72]  # Dynamisch: schmaler = größere Range!
                 },
                 yaxis={
                     'showticklabels': False,  # Keine y-Achsen Werte
                     'title': "",  # Kein y-Achsen Titel
                     'showgrid': False,
-                    'zeroline': False,
+                    'zeroline': True,
                     'fixedrange': True,
                     'automargin': False  # Verhindert automatische Margins für y-Achse
                 },
-                width=150,  # Chart-Breite: 152px
+                width=diagram_width,  # Chart-Breite dynamisch
                 height=180,  # Kompakte Höhe (+30, da plotly unten Platz reserviert)
-                margin={'l': 2, 'r': 4, 't': 24, 'b': 0},  # Minimale Margins
+                margin={'l': 0, 'r': 17, 't': 24, 'b': 0},  # Minimale Margins - 30px für Titel
+                autosize=True,  # Verhindert automatisches Resizing
                 bargap=0,  # Kein Abstand zwischen Balken
                 plot_bgcolor='rgba(0,0,0,0)',  # Transparenter Hintergrund
                 paper_bgcolor='rgba(0,0,0,0)',  # Transparenter Hintergrund
                 title={
                     'text': f"{stat_emojis.get(stat, '📊')} {stat}",
-                    'x': 0.5,
-                    'xanchor': 'center',
+                    'x': 0.0,
+                    'xanchor': 'left',
                     'font': {'size': 12}
                 },
-                shapes=[
-                    # Rahmen um den Plot-Bereich
-                    dict(
-                        type='rect',
-                        xref='x',
-                        yref='paper',
-                        x0=-2,
-                        y0=0,
-                        x1=len(stat_data) + 1,
-                        y1=1,
-                        line=dict(
-                            color='#444444',
-                            width=1
-                        ),
-                        fillcolor='rgba(0,0,0,0)'
-                    )
-                ]
+                hovermode='closest'  # Nur nächster Balken im Hover hervorheben
             )
             
             with chart_cols[i + 1]:  # Index +1 wegen nur Player Spalte (keine Checkbox mehr!)
-                st.plotly_chart(fig, width='content', config={'displayModeBar': False}, key=f"chart_{stat}")
+                st.plotly_chart(fig, width=diagram_width, config={'displayModeBar': False}, key=f"chart_{stat}")
     
     # Reduziere Abstand zur Tabelle
     st.markdown("""
@@ -1285,20 +1529,20 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
     
     # Spalten-Konfiguration: 32px für row-select + Player (200px) + Stats mit Prozenten wo nötig
     column_config = {
-        'Player': st.column_config.TextColumn(width=200)
+        'Player': st.column_config.TextColumn(width=column_name_width)
     }
     
     for col in display_df_clean.columns:
         if col != 'Player':
             if col in percent_columns:
                 # Prozent-Spalten
-                column_config[col] = st.column_config.NumberColumn(width=160, format="%.1f %%")
+                column_config[col] = st.column_config.NumberColumn(width=column_stat_width, format="%.1f %%")
             elif col in ['Health', 'Protection']:
                 # Health und Protection mit Tausender-Trenner (localized)
-                column_config[col] = st.column_config.NumberColumn(width=160, format="localized")
+                column_config[col] = st.column_config.NumberColumn(width=column_stat_width, format="localized")
             else:
                 # Normale Zahlen (Speed, etc.)
-                column_config[col] = st.column_config.NumberColumn(width=160, format="%.0f")
+                column_config[col] = st.column_config.NumberColumn(width=column_stat_width, format="%.0f")
     
     # on_select Callback für Cell-Selection
     def on_player_select():
@@ -1344,7 +1588,7 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
     st.dataframe(
         styled_df,
         hide_index=True,
-        width=1810,
+        width=table_width,
         column_config=column_config,
         height=920,
         row_height=20,
@@ -1725,6 +1969,7 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
             player_name = player_overview.iloc[row_idx]['Name']
             
             if player_name in st.session_state.player_base_global['Name'].values:
+                # Toggle: checked → unchecked, unchecked → checked
                 current_state = st.session_state.player_base_global.loc[
                     st.session_state.player_base_global['Name'] == player_name, 
                     'Checked'
@@ -2322,19 +2567,23 @@ def show_settings_tab(df_all_dates):
         - **Tabelle:** Gefilterte Chars mit:
           - Relic-Level des ausgewählten Players
           - Relic-Empfehlung mit Delta (Δ) und Kommentar
-          - Anzahl Relic-Level in der Gilde (R9, R8, R7, R6, <R6)
+          - Anzahl Relic-Level in der Gilde (R10, R9, R8, R7, <R7)
         - **Relic-Kosten:** Benötigte Signaldaten und Relikt-Material, um die Empfehlung der gefilterten Chars zu erreichen
         - **Hinweis:** Alle Tabellen in Streamlit können nach jeder Spalte sortiert werden
         """)
-    
-    with st.expander(f"**{TAB_CHAR_STATS}**", expanded=False):
+
+    with st.expander(f"**{TAB_STATS}**", expanded=False):
         st.markdown("""
         **Bezieht sich auf aktuellsten Upload**
-        
-        - **Diagramme:** Stats des ausgewählten Chars für alle Player der Gilde
-        - **Tabelle:** Detaillierte Stats-Übersicht aller Player
-        - **Interaktion:** Durch Klick auf eine Zeile können Player in Tabelle und Diagramm farblich markiert werden
-        - **Analyseziel:** Ist mein XYZ vernünftig gemodded oder komplett daneben?
+        - Auswahl eines zu analysierenden Stat-Werts
+          - Beispiele: Speed, Offense, Health, Crit Damage, etc.
+          - Kombinierte Stats: Health + Protection und Effective H+P (dividiert durch 1 - armor)
+        - **Tabelle:** Gefilterte Chars mit:
+          - Werte des Players im Vergleich mit Median der Gilde
+          - Aufsteigend sortiert nach Delta (Δ) zum Gilden-Median
+          - Relic-Level des ausgewählten Players und Median der Gilde
+          - Maximaler und durchschnittlicher Wert der Gilde
+        - **Hinweis:** Alle Tabellen in Streamlit können nach jeder Spalte sortiert werden
         """)
     
     with st.expander(f"**{TAB_PROGRESS}**", expanded=False):
@@ -2346,6 +2595,16 @@ def show_settings_tab(df_all_dates):
         - **Delta (Δ):** Fortschritt vom aktuellsten Datenstand zum ausgewählten Vergleichsdatum (Dropdown in Titelzeile)
         - **Sortierung:** Nach Delta sortiert (größter Fortschritt oben)
         - **Analyseziel:** Wie ist mein Fortschritt im Vergleich zu anderen in der Gilde?
+        """)
+    
+    with st.expander(f"**{TAB_CHAR_STATS}**", expanded=False):
+        st.markdown("""
+        **Bezieht sich auf aktuellsten Upload**
+        
+        - **Diagramme:** Stats des ausgewählten Chars für alle Player der Gilde
+        - **Tabelle:** Detaillierte Stats-Übersicht aller Player
+        - **Interaktion:** Durch Klick auf eine Zeile können Player in Tabelle und Diagramm farblich markiert werden
+        - **Analyseziel:** Ist mein XYZ vernünftig gemodded oder komplett daneben?
         """)
     
     with st.expander(f"**{TAB_MOD_DISTRIBUTION}**", expanded=False):
@@ -2473,6 +2732,9 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         else:
             filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
                                if base_id in available_base_ids]
+        
+        # Progress Tab: Ships sind irrelevant, setze leere Liste
+        filtered_ship_base_ids = []
         
     else:
         # ═══════════════════════════════════════════════════════════════════════
@@ -2657,9 +2919,11 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
             available_base_ids = set(df_newest[df_newest['CombatType'] == 'Character']['BaseId'].unique())
             st.session_state.available_base_ids_cache = available_base_ids
         
-        # 6. Calculate: filtered_base_ids (mit ALLEN Filtern)
+        # 6. Calculate: filtered_base_ids für Characters UND Ships (mit ALLEN Filtern)
         characters_only = [char for char in characters_data if char.get('combat_type') == 1]
+        ships_only = [ship for ship in characters_data if ship.get('combat_type') == 2]
         
+        # Filtere Characters
         filtered_characters = apply_filters(
             characters_only,
             alignment_filter, 
@@ -2673,6 +2937,22 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         )
         filtered_base_ids = [char['base_id'] for char in filtered_characters 
                            if char['base_id'] in available_base_ids]
+        
+        # Filtere Ships (gleiche Filter-Logik!)
+        available_ship_base_ids = set(df_newest[df_newest['CombatType'] == 'Ship']['BaseId'].unique())
+        filtered_ships = apply_filters(
+            ships_only,
+            alignment_filter,
+            categories_filter,
+            role_filter,
+            ability_classes_filter,
+            key_relevance_filter=key_relevance_filter,
+            relevance_dict=relevance_dict,
+            categories_use_and=st.session_state.get('categories_use_and', False),
+            ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
+        )
+        filtered_ship_base_ids = [ship['base_id'] for ship in filtered_ships
+                                 if ship['base_id'] in available_ship_base_ids]
         
         # 7. Render: Character Selection for Tab 2
         st.sidebar.markdown("---")
@@ -2688,17 +2968,51 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         character_names_tab2 = [name for name, base_id in available_characters_tab2]
         
         if character_names_tab2:
+            # Prüfe ob character_from_stats_table gesetzt ist (Klick in Tabelle)
+            if 'character_from_stats_table' in st.session_state:
+                clicked_char = st.session_state.character_from_stats_table
+                
+                # Prüfe ob clicked character in available list ist
+                if clicked_char in character_names_tab2:
+                    # Übernehme clicked character
+                    st.session_state.selected_character_tab2 = clicked_char
+                    
+                    # WICHTIG: Setze auch den Selectbox Key direkt!
+                    selectbox_key = f"tab2_character_select{reset_suffix}"
+                    st.session_state[selectbox_key] = clicked_char
+                else:
+                    # Character nicht mehr verfügbar (Filter geändert) - lösche flag
+                    del st.session_state.character_from_stats_table
+                
+                # Lösche flag nach Verarbeitung
+                if 'character_from_stats_table' in st.session_state:
+                    del st.session_state.character_from_stats_table
+            
+            # Initialize selected_character_tab2 if not exists
+            if 'selected_character_tab2' not in st.session_state:
+                st.session_state.selected_character_tab2 = character_names_tab2[0]
+            
+            # Ensure selected character is in available list, else reset to first
+            if st.session_state.selected_character_tab2 not in character_names_tab2:
+                st.session_state.selected_character_tab2 = character_names_tab2[0]
+            
+            # Selectbox Key für direkten Zugriff
+            selectbox_key = f"tab2_character_select{reset_suffix}"
+            
+            # Setze Selectbox Key auf aktuellen Wert (falls nicht vorhanden)
+            if selectbox_key not in st.session_state:
+                st.session_state[selectbox_key] = st.session_state.selected_character_tab2
+            
+            # Selectbox OHNE index - nutzt Wert aus Session State Key
             selected_character_tab2 = st.sidebar.selectbox(
-                "Character for Tab 2:",
+                "Selection for Character Stats:",
                 character_names_tab2,
-                key=f"tab2_character_select{reset_suffix}"
+                key=selectbox_key
             )
             
-            if 'selected_character_tab2' not in st.session_state:
+            # Update session state if user changed selection via selectbox
+            if st.session_state.selected_character_tab2 != selected_character_tab2:
                 st.session_state.selected_character_tab2 = selected_character_tab2
-            else:
-                if st.session_state.selected_character_tab2 != selected_character_tab2:
-                    st.session_state.selected_character_tab2 = selected_character_tab2
     
     # ============================================================================
     # GEMEINSAME LOGIK: Speichere Ergebnisse
@@ -2706,15 +3020,16 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
     
     # Speichere in Session State - wird von allen Tabs verwendet!
     st.session_state.filtered_base_ids = filtered_base_ids
+    st.session_state.filtered_ship_base_ids = filtered_ship_base_ids
     st.session_state.filters_active = filters_active
     
     # Uncheck All button
     st.sidebar.markdown("---")
     if st.sidebar.button("❌ Uncheck All", key="uncheck_all_btn", width='stretch'):
         if 'player_base_global' in st.session_state:
-            default_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
+            default_ally_code = st.session_state.get('default_ally_code', int(DEFAULT_ALLY_CODE))
             st.session_state.player_base_global['Checked'] = (
-                st.session_state.player_base_global['AllyCode'].astype(str) == default_ally_code
+                st.session_state.player_base_global['AllyCode'] == default_ally_code
             )
             st.rerun()
     
@@ -2734,6 +3049,7 @@ def show_tab_menu():
     # Tab options
     tabs = [
         TAB_OVERVIEW,
+        TAB_STATS,
         TAB_PROGRESS,
         TAB_CHAR_STATS,
         TAB_MOD_DISTRIBUTION,
@@ -2746,7 +3062,7 @@ def show_tab_menu():
     
     # Create container with columns for buttons
     with st.container():
-        cols = st.columns(5, gap="small")
+        cols = st.columns(6, gap="small")
         
         for i, tab in enumerate(tabs):
             with cols[i]:
@@ -2918,9 +3234,9 @@ def main():
         player_base['Checked'] = False  # Default: nobody checked
         
         # Automatically check default_ally_code (from session state or fallback)
-        default_ally_code = st.session_state.get('default_ally_code', DEFAULT_ALLY_CODE)
-        if default_ally_code in player_base['AllyCode'].astype(str).values:
-            player_base.loc[player_base['AllyCode'].astype(str) == default_ally_code, 'Checked'] = True
+        default_ally_code = st.session_state.get('default_ally_code', int(DEFAULT_ALLY_CODE))
+        if default_ally_code in player_base['AllyCode'].values:
+            player_base.loc[player_base['AllyCode'] == default_ally_code, 'Checked'] = True
         
         # Save in Session State
         st.session_state.player_base_global = player_base
@@ -2937,7 +3253,9 @@ def main():
     # CONDITIONAL RENDERING - only active tab is executed!
     # Note: active_tab was already updated before sidebar rendering
     if st.session_state.active_tab == TAB_OVERVIEW:
-        show_character_overview(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
+        show_guild_relics(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
+    if st.session_state.active_tab == TAB_STATS:
+        show_guild_stats(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
     elif st.session_state.active_tab == TAB_PROGRESS:
         show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevance_dict)
     elif st.session_state.active_tab == TAB_CHAR_STATS:
