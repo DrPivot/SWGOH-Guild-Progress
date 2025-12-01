@@ -1199,7 +1199,9 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
         numeric_cols = ['Player', 'Median', 'Δ', 'Avg', 'Max']
         for col in numeric_cols:
             if col in stats_df.columns:
-                stats_df[col] = stats_df[col].round(0)
+                # Nur runden wenn Spalte numerisch ist (bei nur None-Werten ist sie 'object')
+                if pd.api.types.is_numeric_dtype(stats_df[col]):
+                    stats_df[col] = stats_df[col].round(0)
     
     # Formatierung basierend auf Stat-Typ
     percent_columns = {'CritDamage', 'Potency', 'Tenacity', 'CritChance', 'Armor'}
