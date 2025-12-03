@@ -1048,10 +1048,6 @@ def show_guild_relics(df_newest, filtered_characters, characters_data, filters_a
 def show_guild_stats(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter=None, relevance_dict=None, relic_rec_dict=None, notes_dict=None, relic_costs=None):
     """Tab Guild Stats - zeigt statistische Kennzahlen für einen ausgewählten Stat."""
     
-    # Lösche Duplicate-Detection Flag wenn wir zurück im Guild Stats Tab sind
-    if '_last_selected_char_stats' in st.session_state:
-        del st.session_state._last_selected_char_stats
-    
     # Hole Combat Type Filter aus Session State
     combat_type_filter = st.session_state.get('combat_type_filter', ['Character'])
     
@@ -1263,6 +1259,10 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
             else:
                 return
             
+            # Ignoriere Header-Clicks (row_idx oder col_name ist None)
+            if row_idx is None or col_name is None:
+                return
+            
             # Nur bei Click auf Character-Spalte reagieren
             if col_name != 'Character':
                 return
@@ -1303,6 +1303,10 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
 
 def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_active):
     """Tab 2 - Character Stats mit Multi-Player Vergleich via Checkboxen."""
+    
+    # Lösche Duplicate-Detection Flag von Guild Stats (falls vorhanden)
+    if '_last_selected_char_stats' in st.session_state:
+        del st.session_state._last_selected_char_stats
     
     # Hole player_base DIREKT aus Session State (nicht als Parameter!)
     player_base = st.session_state.player_base_global
