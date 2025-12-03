@@ -1263,21 +1263,28 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
             if row_idx is None or col_name is None:
                 return
             
-            # Nur bei Click auf Character-Spalte reagieren
+            # Nur bei Click auf Character-Spalte reagieren - ALLE anderen Spalten ignorieren
             if col_name != 'Character':
                 return
             
-            # WORKAROUND für Mobile: Verhindere doppelte Navigation bei gleichem Character
-            # (passiert wenn beim Sortieren versehentlich Zeile 0 getroffen wird)
+            # WORKAROUND für Mobile Sort-Bug: 
+            # Beim Sortieren wird auf Mobile oft Zeile 0 markiert (Touch-Event auf Header trifft Zelle)
+            # Prüfe ob GENAU der gleiche Character wie beim letzten Callback
             character_name = stats_df.iloc[row_idx]['Character']
             last_selected = st.session_state.get('_last_selected_char_stats', None)
             
-            if character_name == last_selected:
-                # Gleicher Character wie vorher - ignoriere (wahrscheinlich Sort-Touch)
+            # Wenn gleicher Character UND innerhalb 1 Sekunde: Ignoriere (Sort-Touch)
+            import time
+            last_click_time = st.session_state.get('_last_char_stats_click_time', 0)
+            current_time = time.time()
+            
+            if character_name == last_selected and (current_time - last_click_time) < 1.0:
+                # Gleicher Character innerhalb 1 Sekunde - wahrscheinlich Sort-Touch
                 return
             
-            # Merke Selection für nächsten Callback
+            # Merke Selection und Zeit für nächsten Callback
             st.session_state._last_selected_char_stats = character_name
+            st.session_state._last_char_stats_click_time = current_time
             
             # Setze character_from_stats_table (wird von Sidebar übernommen)
             st.session_state.character_from_stats_table = character_name
