@@ -963,6 +963,7 @@ def show_guild_relics(df_newest, filtered_characters, characters_data, filters_a
     with st.container(horizontal=True, gap="medium"):
         # Tabelle anzeigen mit kleiner Zeilenhöhe für mehr sichtbare Zeilen
         # row_height=21 ermöglicht ca. 50 Zeilen bei 1140px Container-Höhe
+        # Keine festen Spaltenbreiten für bessere Mobile-Darstellung (autosize)
         st.dataframe(char_overview, hide_index=True, width="content", height=1100, row_height=21)
         
         # Relic Costs in vertikalem Container (Überschriften + Tabellen übereinander)
@@ -1206,33 +1207,29 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
     # Formatierung basierend auf Stat-Typ
     percent_columns = {'CritDamage', 'Potency', 'Tenacity', 'CritChance', 'Armor'}
     
-    # Column Config
+    # Column Config (keine festen Breiten für bessere Mobile-Darstellung)
     column_config = {
-        'Character': st.column_config.TextColumn(width=200),
-        'Relic Player': st.column_config.NumberColumn(format="%.0f", width=80),
-        'Relic Median': st.column_config.NumberColumn(format="%.0f", width=80)
+        'Relic Player': st.column_config.NumberColumn(format="%.0f"),
+        'Relic Median': st.column_config.NumberColumn(format="%.0f")
     }
     
     # Formatiere alle numerischen Spalten
     for col in stats_df.columns:
         if col not in ['Character', 'Relic Player', 'Relic Median']:  # Relic-Spalten schon definiert
             if selected_stat in percent_columns or col == 'Δ%':
-                # Prozent-Format
+                # Prozent-Format (autosize für Mobile)
                 column_config[col] = st.column_config.NumberColumn(
-                    format="%.1f%%",
-                    width=100
+                    format="%.1f%%"
                 )
             elif selected_stat in large_number_columns:
-                # Große Zahlen mit Tausender-Trennzeichen
+                # Große Zahlen mit Tausender-Trennzeichen (autosize für Mobile)
                 column_config[col] = st.column_config.NumberColumn(
-                    format="localized",
-                    width=100
+                    format="localized"
                 )
             else:
-                # Standard-Format mit 0 Nachkommastellen
+                # Standard-Format mit 0 Nachkommastellen (autosize für Mobile)
                 column_config[col] = st.column_config.NumberColumn(
-                    format="%.0f",
-                    width=100
+                    format="%.0f"
                 )
     
     # on_select Callback für Character-Auswahl
@@ -1266,13 +1263,27 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
             if col_name != 'Character':
                 return
             
+            # WORKAROUND für Mobile: Verhindere doppelte Navigation bei gleichem Character
+            # (passiert wenn beim Sortieren versehentlich Zeile 0 getroffen wird)
             character_name = stats_df.iloc[row_idx]['Character']
+            last_selected = st.session_state.get('_last_selected_char_stats', None)
+            
+            if character_name == last_selected:
+                # Gleicher Character wie vorher - ignoriere (wahrscheinlich Sort-Touch)
+                return
+            
+            # Merke Selection für nächsten Callback
+            st.session_state._last_selected_char_stats = character_name
             
             # Setze character_from_stats_table (wird von Sidebar übernommen)
             st.session_state.character_from_stats_table = character_name
             
             # Wechsle zu Char Stats Tab (kein rerun - passiert automatisch!)
             st.session_state.active_tab = TAB_CHAR_STATS
+            
+            # Lösche Flag beim Tab-Wechsel (damit nächster Click wieder funktioniert)
+            if '_last_selected_char_stats' in st.session_state:
+                del st.session_state._last_selected_char_stats
     
     # Tabelle anzeigen
     st.dataframe(
@@ -1885,8 +1896,9 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
         player_overview = player_overview.sort_values('Δ', ascending=False, na_position='last')
         player_overview = player_overview.reset_index(drop=True)
         
-        # Spalten neu ordnen
-        column_order = ['Name', 'AllyCode', 'Δ', 'Metric'] + date_columns
+        # Spalten neu ordnen: Name, AllyCode, Δ, neuestes Datum, Metric, restliche Daten
+        # date_columns ist absteigend sortiert → [0] = newest, [1:] = rest
+        column_order = ['Name', 'AllyCode', 'Δ', date_columns[0], 'Metric'] + date_columns[1:]
         player_overview = player_overview[column_order]
         
         # Cache für nächsten Run (falls player_clicked) - OHNE Checked/PlayerColor!
@@ -1930,15 +1942,14 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
     
     # Column configuration
     column_config = {
-        'Name': st.column_config.TextColumn('Player Name', width=175),
-        'AllyCode': st.column_config.TextColumn('AllyCode', width=120),
+        'Name': st.column_config.TextColumn('Player Name'),
+        'AllyCode': st.column_config.TextColumn('AllyCode'),
         'Δ': st.column_config.NumberColumn(
             'Δ',
             help='Change since comparison date',
-            format='%+d',
-            width=80
+            format='%+d'
         ),
-        'Metric': st.column_config.TextColumn('Metric', width=110)
+        'Metric': st.column_config.TextColumn('Metric')
     }
     
     # Date columns as numbers (mark comparison date with 📍)
@@ -1993,7 +2004,7 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
         width="content",
         height=1100,
         row_height=21,
-        column_order=("Name", "Δ", "Metric") + tuple(date_columns),
+        column_order=("Name", "Δ", date_columns[0], "Metric") + tuple(date_columns[1:]),
         column_config=column_config,
         selection_mode="single-cell",
         on_select=on_progress_select,
