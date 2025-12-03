@@ -1263,33 +1263,17 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
             if row_idx is None or col_name is None:
                 return
             
-            # Nur bei Click auf Character-Spalte reagieren - ALLE anderen Spalten ignorieren
+            # Nur bei Click auf Character-Spalte reagieren
             if col_name != 'Character':
                 return
             
-            # WORKAROUND für Mobile Sort-Bug: 
-            # Beim Sortieren wird auf Mobile oft Zeile 0 markiert (Touch-Event auf Header trifft Zelle)
-            # Prüfe ob GENAU der gleiche Character wie beim letzten Callback
+            # Hole Character-Name
             character_name = stats_df.iloc[row_idx]['Character']
-            last_selected = st.session_state.get('_last_selected_char_stats', None)
-            
-            # Wenn gleicher Character UND innerhalb 1 Sekunde: Ignoriere (Sort-Touch)
-            import time
-            last_click_time = st.session_state.get('_last_char_stats_click_time', 0)
-            current_time = time.time()
-            
-            if character_name == last_selected and (current_time - last_click_time) < 1.0:
-                # Gleicher Character innerhalb 1 Sekunde - wahrscheinlich Sort-Touch
-                return
-            
-            # Merke Selection und Zeit für nächsten Callback
-            st.session_state._last_selected_char_stats = character_name
-            st.session_state._last_char_stats_click_time = current_time
             
             # Setze character_from_stats_table (wird von Sidebar übernommen)
             st.session_state.character_from_stats_table = character_name
             
-            # Wechsle zu Char Stats Tab (kein rerun - passiert automatisch!)
+            # Wechsle zu Char Stats Tab
             st.session_state.active_tab = TAB_CHAR_STATS
     
     # Tabelle anzeigen
@@ -1310,10 +1294,6 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
 
 def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_active):
     """Tab 2 - Character Stats mit Multi-Player Vergleich via Checkboxen."""
-    
-    # Lösche Duplicate-Detection Flag von Guild Stats (falls vorhanden)
-    if '_last_selected_char_stats' in st.session_state:
-        del st.session_state._last_selected_char_stats
     
     # Hole player_base DIREKT aus Session State (nicht als Parameter!)
     player_base = st.session_state.player_base_global
