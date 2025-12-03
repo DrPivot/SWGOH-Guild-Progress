@@ -1048,6 +1048,10 @@ def show_guild_relics(df_newest, filtered_characters, characters_data, filters_a
 def show_guild_stats(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter=None, relevance_dict=None, relic_rec_dict=None, notes_dict=None, relic_costs=None):
     """Tab Guild Stats - zeigt statistische Kennzahlen für einen ausgewählten Stat."""
     
+    # Lösche Duplicate-Detection Flag wenn wir zurück im Guild Stats Tab sind
+    if '_last_selected_char_stats' in st.session_state:
+        del st.session_state._last_selected_char_stats
+    
     # Hole Combat Type Filter aus Session State
     combat_type_filter = st.session_state.get('combat_type_filter', ['Character'])
     
@@ -1280,10 +1284,6 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
             
             # Wechsle zu Char Stats Tab (kein rerun - passiert automatisch!)
             st.session_state.active_tab = TAB_CHAR_STATS
-            
-            # Lösche Flag beim Tab-Wechsel (damit nächster Click wieder funktioniert)
-            if '_last_selected_char_stats' in st.session_state:
-                del st.session_state._last_selected_char_stats
     
     # Tabelle anzeigen
     st.dataframe(
