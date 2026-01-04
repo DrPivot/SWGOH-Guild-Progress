@@ -1839,7 +1839,7 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
         available_dates = sorted(set([col.split('_')[0] for col in date_cols]), reverse=True)
         newest_date = available_dates[0]
         
-        if len(available_dates) < 2:
+        if len(available_dates) < 1:
             st.warning("⚠️ At least 2 data snapshots required for comparison.")
             return
         
