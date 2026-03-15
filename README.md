@@ -231,7 +231,7 @@ Erforderliche Spalten im CSV:
    - `data/ships.json` für neue Schiffe
    - `data/character_relevance.csv` für Recommended Relic Levels
    - `data/relic_costs_cumulative.json` bei neuen Relic Tiers
-   - HotBots/SWGOH.gg API-Exporte verwenden
+   - HotBots/SWGOH.gg API-Exporte verwenden (https://swgoh.gg/api/characters/ und https://swgoh.gg/api/ships/)
 
 ## Support & Kontakt
 
