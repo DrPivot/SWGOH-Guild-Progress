@@ -13,13 +13,14 @@ FULCRUMAHSOKA,Ahsoka Tano (Fulcrum),yes,,9,,Light Side,Attacker,Rebel|Spectre|Un
 AHSOKATANO,Ahsoka Tano (Snips),yes,,9,,Light Side,Attacker,Leader|501st|Galactic Republic|Jedi,JEDISTARFIGHTERAHSOKATANO
 AMILYNHOLDO,Amilyn Holdo,no,,5,,Light Side,Tank,Resistance|Fleet Commander,CAPITALRADDUS
 ASAJVENTRESS,Asajj Ventress,no,,5,,Dark Side,Support,Leader|Nightsister|Separatist|Unaligned Force User,
+ASAJJDARKDISCIPLE,Asajj Ventress (Dark Disciple),yes,,7,GAC delta,Dark Side,Attacker,Leader|Bounty Hunter|Nightsister|Unaligned Force User,
 AURRA_SING,Aurra Sing,no,,6,,Dark Side,Attacker,Leader|Bounty Hunter|Mercenary|Scoundrel,
 B1BATTLEDROIDV2,B1 Battle Droid,no,,5,,Dark Side,Attacker,Droid|Separatist,
 B2SUPERBATTLEDROID,B2 Super Battle Droid,no,,7,,Dark Side,Tank,Droid|Separatist,
 BB8,BB-8,no,,7,,Light Side,Support,Droid|Resistance,
 BT1,BT-1,yes,,9,TB,Dark Side,Attacker,Droid|Scoundrel,
 BARRISSOFFEE,Barriss Offee,yes,,8,GAC delta,Light Side,Healer,Leader|Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
-BASTILASHAN,Bastila Shan,yes,,7,GAC delta,Light Side,Support,Leader|Jedi|Old Republic,
+BASTILASHAN,Bastila Shan,yes,,7,,Light Side,Support,Leader|Jedi|Old Republic,
 BASTILASHANDARK,Bastila Shan (Fallen),yes,,7,GAC delta,Dark Side,Support,Sith|Sith Empire,
 BATCHERS3,Batcher,yes,,7,,Light Side,Attacker,Bad Batch|Order 66 Raid,
 BAYLANSKOLL,Baylan Skoll,yes,,9,,Dark Side,Tank,Leader|Mercenary|Unaligned Force User,
@@ -54,21 +55,24 @@ PHASMA,Captain Phasma,no,,7,,Dark Side,Support,Leader|First Order,COMMANDSHUTTLE
 CAPTAINREX,Captain Rex,yes,,8,TB,Light Side,Support,Clone Trooper|Phoenix|Rebel|Rebel Fighter,
 CAPTAINSILVO,Captain Silvo,yes,,7,,Dark Side,Support,Leader|Pirate|Scoundrel|Unaligned Force User|Order 66 Raid,
 CAPTAINTARPALS,Captain Tarpals,yes,,8,,Light Side,Attacker,Gungan,
-CARADUNE,Cara Dune,yes,,7,TB,Light Side,Tank,Mercenary|Rebel|Rebel Fighter|Scoundrel,
+CARADUNE,Cara Dune,yes,,7,TB,Light Side,Tank,Constable|Mercenary|Rebel|Rebel Fighter|Scoundrel,
 CARTHONASI,Carth Onasi,no,,5,,Light Side,Attacker,Leader|Old Republic,EBONHAWK
 CASSIANANDOR,Cassian Andor,yes,,8,,Light Side,Support,Rebel|Rebel Fighter|Rogue One,UWINGROGUEONE
+CASSIANUNDERCOVER,Cassian Andor (Undercover),no,,5,,Light Side,Support,Leader|Rebel|Rebel Fighter,
 CEREJUNDA,Cere Junda,yes,,8,GAC delta,Light Side,Support,Leader|Scoundrel|Unaligned Force User,
 CHEWBACCALEGENDARY,Chewbacca,yes,,8,TB,Light Side,Attacker,Rebel|Scoundrel|Smuggler|Wookiee,MILLENNIUMFALCON
 CHIEFCHIRPA,Chief Chirpa,no,,7,,Light Side,Support,Leader|Ewok,
 CHIEFNEBIT,Chief Nebit,no,,5,,Light Side,Tank,Leader|Jawa,
 CHIRRUTIMWE,Chirrut Îmwe,no,,5,,Light Side,Attacker,Rebel|Rebel Fighter|Rogue One,
 CHOPPERS3,Chopper,no,,7,TW delta,Light Side,Support,Droid|Phoenix|Rebel|Spectre,PHANTOM2
+CINTA,Cinta Kaz,no,,5,,Light Side,Attacker,Rebel|Rebel Fighter,
 CLONESERGEANTPHASEI,Clone Sergeant - Phase I,no,,5,,Light Side,Attacker,Clone Trooper|Galactic Republic,ARC170CLONESERGEANT
 CLONEWARSCHEWBACCA,Clone Wars Chewbacca,yes,,7,TB,Light Side,Tank,Leader|Galactic Republic|Scoundrel|Wookiee,
+COBBVANTH,Cobb Vanth,yes,,7,,Light Side,Attacker,Leader|Constable,
 COLONELSTARCK,Colonel Starck,no,,8,,Dark Side,Support,Empire|Imperial Trooper,
 COMMANDERAHSOKA,Commander Ahsoka Tano,yes,,9,,Light Side,Attacker,Galactic Republic|Scoundrel|Unaligned Force User,
 COMMANDERLUKESKYWALKER,Commander Luke Skywalker,yes,,7,,Light Side,Attacker,Leader|Rebel|Unaligned Force User,
-CORUSCANTUNDERWORLDPOLICE,Coruscant Underworld Police,yes,,9,,Light Side,Support,Galactic Republic,
+CORUSCANTUNDERWORLDPOLICE,Coruscant Underworld Police,yes,,9,,Light Side,Support,Constable|Galactic Republic,
 COUNTDOOKU,Count Dooku,yes,,8,TW delta,Dark Side,Attacker,Leader|Separatist|Sith,
 CROSSHAIRS3,Crosshair (Scarred),yes,,7,,Light Side,Attacker,Bad Batch|Order 66 Raid,
 DARKTROOPER,Dark Trooper,no,,7,,Dark Side,Attacker,Droid|Empire|Imperial Remnant|Imperial Trooper,
@@ -84,13 +88,15 @@ DARTHSION,Darth Sion,yes,,7,GAC delta,Dark Side,Tank,Sith,
 DARTHTALON,Darth Talon,yes,,7,GAC delta,Dark Side,Attacker,Sith,
 DARTHTRAYA,Darth Traya,yes,,7,GAC delta,Dark Side,Support,Leader|Sith,
 VADER,Darth Vader,yes,,8,,Dark Side,Attacker,Leader|Empire|Sith,TIEADVANCED
+VADERDUELSEND,Darth Vader (Duel's End),yes,,8,GAC delta,Dark Side,Attacker,Empire|Sith,
 DASHRENDAR,Dash Rendar,yes,,7,,Light Side,Support,Leader|Mercenary|Scoundrel|Smuggler,OUTRIDER
 DATHCHA,Dathcha,no,,5,,Light Side,Support,Leader|Jawa,
 DEATHTROOPER,Death Trooper,no,,7,,Dark Side,Attacker,Empire|Imperial Remnant|Imperial Trooper,TIEREAPER
 DEATHTROOPERPERIDEA,Death Trooper (Peridea),yes,,9,TB,Dark Side,Attacker,Imperial Remnant|Nightsister,
+DEDRAMEERO,Dedra Meero,no,,5,,Dark Side,Support,Empire|ISB,
 DENGAR,Dengar,yes,,8,,Dark Side,Attacker,Leader|Bounty Hunter|Mercenary|Scoundrel,PUNISHINGONE
 DEPABILLABA,Depa Billaba,yes,,9,TB,Light Side,Attacker,Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
-DIRECTORKRENNIC,Director Krennic,no,,5,,Dark Side,Support,Leader|Empire,
+DIRECTORKRENNIC,Director Krennic,no,,5,,Dark Side,Support,Leader|Empire|ISB,
 DISGUISEDCLONETROOPER,Disguised Clone Trooper,yes,,9,,Dark Side,Support,Clone Trooper|Empire|Order 66 Raid,
 DOCTORAPHRA,Doctor Aphra,yes,,9,TB,Dark Side,Support,Leader|Mercenary|Scoundrel,
 DROIDEKA,Droideka,no,,7,,Dark Side,Attacker,Droid|Separatist,
@@ -103,12 +109,12 @@ ENFYSNEST,Enfys Nest,no,,7,,Light Side,Attacker,Pirate|Scoundrel|Smuggler|Order 
 EWOKELDER,Ewok Elder,no,,5,,Light Side,Healer,Ewok,
 EWOKSCOUT,Ewok Scout,no,,5,,Light Side,Attacker,Ewok,
 EZRABRIDGERS3,Ezra Bridger,no,,6,,Light Side,Attacker,Jedi|Phoenix|Rebel,PHANTOM2
-EZRAEXILE,Ezra Bridger (Exile),yes,,9,,Light Side,Support,Jedi|Spectre,
+EZRAEXILE,Ezra Bridger (Exile),yes,,10,,Light Side,Support,Jedi|Spectre,
 FENNECSHAND,Fennec Shand,no,,7,,Dark Side,Attacker,Leader|Bounty Hunter|Mercenary|Scoundrel,
 FIFTHBROTHER,Fifth Brother,yes,,9,TB,Dark Side,Support,Leader|Empire|Inquisitorius|Unaligned Force User,SCYTHE
 FINN,Finn,no,,6,GAC delta,Light Side,Tank,Leader|Resistance,MILLENNIUMFALCONEP7
 FIRSTORDEREXECUTIONER,First Order Executioner,no,,5,,Dark Side,Attacker,First Order,
-FIRSTORDEROFFICERMALE,First Order Officer,no,,6,,Dark Side,Support,First Order,FIRSTORDERTIEECHELON
+FIRSTORDEROFFICERMALE,First Order Officer,yes,,6,,Dark Side,Support,First Order,FIRSTORDERTIEECHELON
 FIRSTORDERSPECIALFORCESPILOT,First Order SF TIE Pilot,no,,5,,Dark Side,Attacker,First Order,TIEFIGHTERFOSF
 FIRSTORDERTROOPER,First Order Stormtrooper,no,,5,,Dark Side,Tank,First Order,COMMANDSHUTTLE
 FIRSTORDERTIEPILOT,First Order TIE Pilot,no,,5,,Dark Side,Attacker,First Order,TIEFIGHTERFIRSTORDER
@@ -148,10 +154,12 @@ IG11,IG-11,no,,5,,Light Side,Healer,Droid|Scoundrel,
 IG12,IG-12 & Grogu,yes,,7,GAC delta,Light Side,Healer,Mandalorian,
 IG86SENTINELDROID,IG-86 Sentinel Droid,no,,5,,Dark Side,Attacker,Droid,
 IG88,IG-88,no,,6,,Dark Side,Attacker,Leader|Bounty Hunter|Droid|Scoundrel,IG2000
+IG90,IG-90,yes,,7,GAC delta,Dark Side,Support,Leader|Bounty Hunter|Droid|Scoundrel,
 IDENVERSIOEMPIRE,Iden Versio,yes,,8,,Dark Side,Attacker,Leader|Empire|Imperial Trooper,TIEDEFENDER
 IMAGUNDI,Ima-Gun Di,no,,5,,Light Side,Support,Leader|Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
-IMPERIALPROBEDROID,Imperial Probe Droid,no,,5,,Dark Side,Support,Droid|Empire,
+IMPERIALPROBEDROID,Imperial Probe Droid,no,,5,,Dark Side,Support,Droid|Empire|ISB,
 IMPERIALSUPERCOMMANDO,Imperial Super Commando,yes,,7,,Dark Side,Attacker,Empire|Mandalorian,GAUNTLETSTARFIGHTER
+INQUISITORBARRISS,Inquisitor Barriss,yes,,7,GAC delta,Dark Side,Healer,Leader|Empire|Inquisitorius|Unaligned Force User,
 JABBATHEHUTT,Jabba the Hutt,yes,,9,GL,Dark Side,Support,Leader|Galactic Legend|Bounty Hunter|Hutt Cartel|Smuggler,
 JANGOFETT,Jango Fett,yes,,7,TW delta,Dark Side,Attacker,Leader|Bounty Hunter|Mandalorian|Mercenary|Scoundrel|Separatist,
 JARJARBINKS,Jar Jar Binks,yes,,8,,Light Side,Support,Gungan,
@@ -168,38 +176,42 @@ JEDIMASTERKENOBI,Jedi Master Kenobi,yes,,8,GL,Light Side,Attacker,Leader|Galacti
 GRANDMASTERLUKE,Jedi Master Luke Skywalker,yes,,9,GL,Light Side,Tank,Galactic Legend|Leader|Jedi,
 JEDIMASTERMACEWINDU,Jedi Master Mace Windu,yes,,9,TB,Light Side,Attacker,Leader|Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
 JOCASTANU,Jocasta Nu,yes,,9,TB,Light Side,Attacker,Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
-JOLEEBINDO,Jolee Bindo,no,,5,,Light Side,Healer,Jedi|Old Republic,
+JOLEEBINDO,Jolee Bindo,yes,,7,GAC delta,Light Side,Healer,Jedi|Old Republic,
 JUHANI,Juhani,yes,,8,TW delta,Light Side,Tank,Jedi|Old Republic,
 JYNERSO,Jyn Erso,yes,,7,,Light Side,Attacker,Leader|Rebel|Rebel Fighter|Rogue One,UWINGROGUEONE
 K2SO,K-2SO,no,,5,,Light Side,Tank,Droid|Rebel|Rebel Fighter|Rogue One,UWINGROGUEONE
+KXSECURITYDROID,KX Security Droid,no,,5,,Dark Side,Tank,Droid|Empire|ISB,
 KANANJARRUSS3,Kanan Jarrus,no,,7,TW delta,Light Side,Tank,Jedi|Phoenix|Rebel,GHOST
 KELLERANBEQ,Kelleran Beq,yes,,8,,Light Side,Attacker,Leader|Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
-KIADIMUNDI,Ki-Adi-Mundi,yes,,8,,Light Side,Attacker,Galactic Republic|Jedi,
+KIADIMUNDI,Ki-Adi-Mundi,yes,,8,TW delta,Light Side,Attacker,Galactic Republic|Jedi,
 KITFISTO,Kit Fisto,no,,7,,Light Side,Attacker,Leader|Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
 KIX,Kix,yes,,7,,Light Side,Healer,Clone Trooper|Pirate|Scoundrel|Order 66 Raid,
+KLEYA,Kleya Marki,no,,5,,Light Side,Attacker,Rebel|Rebel Fighter,
 KRRSANTAN,Krrsantan,yes,,9,GAC delta,Dark Side,Tank,Leader|Bounty Hunter|Hutt Cartel|Mercenary|Scoundrel|Wookiee,
 KUIIL,Kuiil,no,,5,,Light Side,Support,Scoundrel,
 KYLEKATARN,Kyle Katarn,yes,,7,TB,Light Side,Attacker,Jedi|Mercenary|Rebel|Rebel Fighter,RAVENSCLAW
 KYLOREN,Kylo Ren,no,,7,,Dark Side,Attacker,First Order|Unaligned Force User,COMMANDSHUTTLE
 KYLORENUNMASKED,Kylo Ren (Unmasked),yes,,8,,Dark Side,Tank,Leader|First Order|Unaligned Force User,TIESILENCER
-L3_37,L3-37,no,,6,,Light Side,Tank,Droid|Mercenary|Scoundrel|Smuggler,MILLENNIUMFALCONPRISTINE
+L3_37,L3-37,yes,,7,TW delta,Light Side,Tank,Droid|Mercenary|Scoundrel|Smuggler,MILLENNIUMFALCONPRISTINE
 ADMINISTRATORLANDO,Lando Calrissian,no,,5,,Light Side,Attacker,Leader|Rebel|Rebel Fighter|Scoundrel,
 GLLEIA,Leia Organa,yes,,9,GL,Light Side,Tank,Galactic Legend|Leader|Rebel,
-LOBOT,Lobot,no,,5,,Light Side,Support,Leader|Rebel,
+LOBOT,Lobot,no,,5,,Light Side,Support,Leader|Constable|Rebel,
 LOGRAY,Logray,no,,5,,Light Side,Support,Ewok,
-LORDVADER,Lord Vader,yes,,9,GL,Dark Side,Attacker,Leader|Galactic Legend|Empire|Sith,
+LORDVADER,Lord Vader,yes,,10,GL,Dark Side,Attacker,Leader|Galactic Legend|Empire|Sith,
 LUKESKYWALKER,Luke Skywalker (Farmboy),no,,5,,Light Side,Attacker,Leader|Rebel,
 LUMINARAUNDULI,Luminara Unduli,no,,7,,Light Side,Healer,Leader|Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
 LUTHENRAEL,Luthen Rael,yes,,7,TB,Light Side,Support,Rebel|Rebel Fighter,
 MACEWINDU,Mace Windu,yes,,8,GAC delta,Light Side,Tank,Leader|Galactic Republic|Jedi|Fleet Commander,CAPITALJEDICRUISER
 MAGMATROOPER,Magmatrooper,no,,5,,Dark Side,Attacker,Empire|Imperial Trooper,
+MAJORPARTAGAZ,Major Partagaz,no,,5,,Dark Side,Support,Leader|Empire|ISB,
 MARAJADE,"Mara Jade, The Emperor's Hand",yes,,7,GAC delta,Dark Side,Attacker,Empire|Unaligned Force User,
 MARROK,Marrok,yes,,8,,Dark Side,Support,Inquisitorius|Mercenary|Unaligned Force User,
 MASTERQUIGON,Master Qui-Gon,yes,,9,,Light Side,Support,Galactic Republic|Jedi,
 MAULS7,Maul,yes,,8,GAC delta,Dark Side,Attacker,Leader|Mandalorian|Unaligned Force User,
-MAZKANATA,Maz Kanata,yes,,7,,Light Side,Support,Leader|Pirate|Scoundrel|Smuggler|Unaligned Force User|Order 66 Raid,
+MAULHATEFUELED,Maul (Hate-Fueled),yes,,8,GAC delta,Dark Side,Attacker,Unaligned Force User,
+MAZKANATA,Maz Kanata,yes,,8,GAC delta,Light Side,Support,Leader|Pirate|Scoundrel|Smuggler|Unaligned Force User|Order 66 Raid,
 MERRIN,Merrin,yes,,7,TB,Dark Side,Support,Nightsister,
-MISSIONVAO,Mission Vao,no,,5,,Light Side,Attacker,Mercenary|Old Republic|Scoundrel,
+MISSIONVAO,Mission Vao,yes,,7,TW delta,Light Side,Attacker,Mercenary|Old Republic|Scoundrel,
 HUMANTHUG,Mob Enforcer,no,,5,,Dark Side,Support,Hutt Cartel|Scoundrel,
 MOFFGIDEONS1,Moff Gideon,yes,,8,TB,Dark Side,Support,Leader|Empire|Imperial Remnant|Imperial Trooper,
 MONMOTHMA,Mon Mothma,no,,5,,Light Side,Support,Leader|Rebel,
@@ -210,7 +222,7 @@ NIGHTSISTERACOLYTE,Nightsister Acolyte,no,,5,,Dark Side,Attacker,Nightsister,
 NIGHTSISTERINITIATE,Nightsister Initiate,no,,5,,Dark Side,Attacker,Nightsister,
 NIGHTSISTERSPIRIT,Nightsister Spirit,yes,,8,GAC delta,Dark Side,Attacker,Nightsister,
 NIGHTSISTERZOMBIE,Nightsister Zombie,no,,5,,Dark Side,Tank,Nightsister,
-NINTHSISTER,Ninth Sister,yes,,8,,Dark Side,Tank,Leader|Empire|Inquisitorius|Unaligned Force User,
+NINTHSISTER,Ninth Sister,yes,,8,GAC delta,Dark Side,Tank,Leader|Empire|Inquisitorius|Unaligned Force User,
 NUTEGUNRAY,Nute Gunray,yes,,7,TW delta,Dark Side,Support,Leader|Scoundrel|Separatist,
 OLDBENKENOBI,Obi-Wan Kenobi (Old Ben),no,,5,,Light Side,Tank,Leader|Jedi|Rebel,
 DAKA,Old Daka,no,,7,,Dark Side,Healer,Leader|Nightsister,
@@ -250,11 +262,12 @@ SM33,SM-33,yes,,9,GAC delta,Dark Side,Attacker,Droid|Pirate|Scoundrel|Order 66 R
 STAP,STAP,no,,7,,Dark Side,Attacker,Droid|Separatist,
 SABINEWRENS3,Sabine Wren,no,,7,TW delta,Light Side,Attacker,Mandalorian|Phoenix|Rebel,PHANTOM2
 SANASTARROS,Sana Starros,no,,5,,Light Side,Attacker,Leader|Mercenary|Pirate|Scoundrel|Smuggler|Order 66 Raid,
+SATELESHAN,Satele Shan,yes,,9,GAC delta,Light Side,Tank,Leader|Jedi|Old Republic,
 SAVAGEOPRESS,Savage Opress,yes,,7,GAC delta,Dark Side,Attacker,Leader|Sith,
 SAWGERRERA,Saw Gerrera,yes,,7,TB,Light Side,Support,Leader|Rebel|Rebel Fighter,
 SCARIFREBEL,Scarif Rebel Pathfinder,no,,5,,Light Side,Tank,Rebel|Rebel Fighter|Rogue One,UWINGSCARIF
 SCOUTTROOPER_V3,Scout Trooper,yes,,8,TB,Dark Side,Support,Empire|Imperial Remnant|Imperial Trooper,
-SECONDSISTER,Second Sister,no,,7,,Dark Side,Attacker,Leader|Empire|Inquisitorius|Unaligned Force User,TIEINTERCEPTOR
+SECONDSISTER,Second Sister,yes,,7,GAC delta,Dark Side,Attacker,Leader|Empire|Inquisitorius|Unaligned Force User,TIEINTERCEPTOR
 SEVENTHSISTER,Seventh Sister,yes,,9,TB,Dark Side,Healer,Leader|Empire|Inquisitorius|Unaligned Force User,
 SHAAKTI,Shaak Ti,yes,,8,,Light Side,Support,Leader|Galactic Republic|Jedi|Jedi Vanguard|Order 66 Raid,
 SHINHATI,Shin Hati,yes,,8,,Dark Side,Attacker,Mercenary|Unaligned Force User,
@@ -269,6 +282,7 @@ SNOWTROOPER,Snowtrooper,no,,5,,Dark Side,Attacker,Empire|Imperial Trooper,
 STARKILLER,Starkiller,yes,,9,GAC delta,Dark Side,Attacker,Unaligned Force User,
 STORMTROOPER,Stormtrooper,no,,5,,Dark Side,Tank,Empire|Imperial Remnant|Imperial Trooper,
 STORMTROOPERHAN,Stormtrooper Han,yes,,7,GAC delta,Light Side,Tank,Leader|Rebel|Scoundrel,
+STORMTROOPERLUKE,Stormtrooper Luke,yes,,7,GAC delta,Light Side,Support,Leader|Rebel,
 SUNFAC,Sun Fac,no,,5,,Dark Side,Tank,Geonosian|Separatist,GEONOSIANSTARFIGHTER1
 SUPREMELEADERKYLOREN,Supreme Leader Kylo Ren,yes,,9,GL,Dark Side,Attacker,Leader|First Order|Galactic Legend|Unaligned Force User,
 T3_M4,T3-M4,no,,5,,Light Side,Support,Droid|Old Republic,EBONHAWK
@@ -293,6 +307,7 @@ URORRURRR,URoRRuR'R'R,no,,5,,Dark Side,Support,Leader|Tusken,
 UGNAUGHT,Ugnaught,no,,5,,Light Side,Support,,
 YOUNGCHEWBACCA,Vandor Chewbacca,yes,,7,TB,Light Side,Tank,Mercenary|Scoundrel|Smuggler|Wookiee,
 VANE,Vane,yes,,9,GAC delta,Dark Side,Tank,Pirate|Scoundrel|Order 66 Raid,
+VEL,Vel Sartha,no,,5,,Light Side,Support,Rebel|Rebel Fighter,
 SMUGGLERCHEWBACCA,Veteran Smuggler Chewbacca,yes,,7,TB,Light Side,Attacker,Resistance|Scoundrel|Wookiee|Smuggler,
 SMUGGLERHAN,Veteran Smuggler Han Solo,no,,5,,Light Side,Attacker,Mercenary|Resistance|Scoundrel|Smuggler,
 VISASMARR,Visas Marr,yes,,7,GAC delta,Light Side,Healer,Unaligned Force User,
@@ -301,25 +316,11 @@ WATTAMBOR,Wat Tambor,yes,,7,TW delta,Dark Side,Support,Separatist,
 WEDGEANTILLES,Wedge Antilles,no,,5,,Light Side,Attacker,Leader|Rebel|Rebel Fighter,XWINGRED2
 WICKET,Wicket,no,,5,,Light Side,Attacker,Ewok,
 BADBATCHWRECKER,Wrecker,no,,5,,Light Side,Tank,Bad Batch|Clone Trooper|Galactic Republic,MARAUDER
-WRECKERS3,Wrecker (Mercenary),yes,,7,,Light Side,Tank,Bad Batch|Mercenary|Order 66 Raid,
+WRECKERS3,Wrecker (Mercenary),yes,,8,GAC delta,Light Side,Tank,Bad Batch|Mercenary|Order 66 Raid,
+YODACHEWBACCA,Yoda & Chewie,yes,,7,TB,Light Side,Support,Galactic Republic|Jedi|Wookiee,
 YOUNGHAN,Young Han Solo,yes,,5,TB,Light Side,Attacker,Mercenary|Scoundrel|Smuggler,
 YOUNGLANDO,Young Lando Calrissian,no,,6,,Light Side,Attacker,Mercenary|Scoundrel|Smuggler,MILLENNIUMFALCONPRISTINE
 ZAALBAR,Zaalbar,yes,,7,TB,Light Side,Tank,Mercenary|Old Republic|Scoundrel|Wookiee,
 ZAMWESELL,Zam Wesell,no,,7,,Dark Side,Attacker,Leader|Bounty Hunter|Mercenary|Scoundrel,
 ZORIIBLISS_V2,Zorii Bliss,yes,,7,GAC delta,Light Side,Support,Resistance|Scoundrel|Smuggler,COMEUPPANCE
 ZUCKUSS,Zuckuss,no,,7,,Dark Side,Tank,Leader|Bounty Hunter|Scoundrel|Unaligned Force User,
-ASAJJDARKDISCIPLE,Asajj Ventress (Dark Disciple),yes,,7,GAC delta,Dark Side,Attacker,Leader|Bounty Hunter|Nightsister|Unaligned Force User,
-CASSIANUNDERCOVER,Cassian Andor (Undercover),no,,5,,Light Side,Support,Leader|Rebel|Rebel Fighter,
-CINTA,Cinta Kaz,no,,5,,Light Side,Attacker,Rebel|Rebel Fighter,
-VADERDUELSEND,Darth Vader (Duel's End),yes,,9,GAC delta,Dark Side,Attacker,Empire|Sith,
-DEDRAMEERO,Dedra Meero,no,,5,,Dark Side,Support,Empire|ISB,
-IG90,IG-90,yes,,7,GAC delta,Dark Side,Support,Leader|Bounty Hunter|Droid|Scoundrel,
-INQUISITORBARRISS,Inquisitor Barriss,yes,,7,GAC delta,Dark Side,Healer,Leader|Empire|Inquisitorius|Unaligned Force User,
-KXSECURITYDROID,KX Security Droid,no,,5,,Dark Side,Tank,Droid|Empire|ISB,
-KLEYA,Kleya Marki,no,,5,,Light Side,Attacker,Rebel|Rebel Fighter,
-MAJORPARTAGAZ,Major Partagaz,no,,5,,Dark Side,Support,Leader|Empire|ISB,
-MAULHATEFUELED,Maul (Hate-Fueled),yes,,9,GAC delta,Dark Side,Attacker,Unaligned Force User,
-SATELESHAN,Satele Shan,no,,5,,Light Side,Tank,Leader|Jedi|Old Republic,
-STORMTROOPERLUKE,Stormtrooper Luke,yes,,7,GAC delta,Light Side,Support,Leader|Rebel,
-VEL,Vel Sartha,no,,5,,Light Side,Support,Rebel|Rebel Fighter,
-YODACHEWBACCA,Yoda & Chewie,yes,,7,TB,Light Side,Support,Galactic Republic|Jedi|Wookiee,
