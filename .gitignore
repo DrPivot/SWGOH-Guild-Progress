@@ -55,7 +55,7 @@ data/character_relevance_template.csv
 .github/instructions/
 
 # Other source files
-data/units.json
+data/.archive/
 
 # Documentation files for future features
 Weiterentwicklung.md
