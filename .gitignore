@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 develop-eggs/
@@ -27,7 +28,7 @@ wheels/
 .streamlit/secrets.toml
 
 # CSV Input Folder (unverschlüsselte CSVs vor Encryption)
-hu_data/input/*.csv
+data/hotutils/input/*.csv
 
 # IDE
 .vscode/
@@ -59,11 +60,12 @@ data/.archive/
 
 # Documentation files for future features
 Weiterentwicklung.md
+_TICKETS/
 
 # GitHub Copilot instructions (local only)
 .github/instructions/
 
 # Data files (optional - entferne Zeilen wenn du Daten committen willst)
-hu_data/archive/
-# hu_data/*.csv
+data/hotutils/archive/
+# data/hotutils/*.csv
 # data/

@@ -69,6 +69,35 @@ SLOT_KEY_CROSS = 'Cross'
 # Combat Types (constant - nur Character und Ship)
 COMBAT_TYPES = ['Character', 'Ship']
 
+BENCHMARK_SOURCE_OFF = 'off'
+BENCHMARK_SOURCE_ALL = 'all'
+BENCHMARK_SOURCE_GUILDS_100 = 'guilds_100'
+BENCHMARK_SOURCE_KYBER_1000 = 'kyber_1000'
+BENCHMARK_SOURCE_SELECTED_GUILD = 'selected_guild'
+
+BENCHMARK_SOURCE_LABELS = {
+    BENCHMARK_SOURCE_OFF: 'Off',
+    BENCHMARK_SOURCE_ALL: 'All Guilds',
+    BENCHMARK_SOURCE_GUILDS_100: 'Top 100 Guilds',
+    BENCHMARK_SOURCE_KYBER_1000: 'Top 1000 Kyber',
+    BENCHMARK_SOURCE_SELECTED_GUILD: 'My Guild',
+}
+
+BENCHMARK_SOURCE_COLUMNS = {
+    BENCHMARK_SOURCE_ALL: 'unit_relic_all',
+    BENCHMARK_SOURCE_GUILDS_100: 'unit_relic_guilds_100',
+    BENCHMARK_SOURCE_KYBER_1000: 'unit_relic_kyber_1000',
+}
+
+BENCHMARK_RELIC_OPTIONS = list(range(10, 0, -1))
+DEFAULT_BENCHMARK_SOURCE = BENCHMARK_SOURCE_KYBER_1000
+DEFAULT_BENCHMARK_MIN_RELIC = 7
+DEFAULT_BENCHMARK_FILTER_ENABLED = False
+ALL_ERAS_OPTION = 'All Eras'
+BENCHMARK_FILTER_STATE_KEY = 'benchmark_filter_enabled'
+BENCHMARK_FILTER_SIDEBAR_WIDGET_KEY = 'benchmark_filter_sidebar_widget'
+BENCHMARK_FILTER_PROGRESS_WIDGET_KEY = 'benchmark_filter_progress_widget'
+
 # ============================================================================
 # SETUP
 # ============================================================================
@@ -92,59 +121,311 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data
-def load_character_data():
-    """Lädt die Charakterdaten aus der JSON-Datei."""
+def load_unit_catalog_data():
+    """Lädt den kanonischen Unit-Katalog aus unit_list.csv."""
     try:
-        with open('data/characters.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
+        df = pd.read_csv('data/unit_list.csv', encoding='utf-8-sig', dtype=str, keep_default_na=False)
     except FileNotFoundError:
-        st.error("❌ characters.json not found!")
+        st.error("❌ unit_list.csv not found!")
         return []
-    except json.JSONDecodeError:
-        st.error("❌ Error loading characters.json!")
+    except Exception as e:
+        st.error(f"❌ Error loading unit_list.csv: {e}")
         return []
+
+    def split_pipe_values(value):
+        text = str(value).strip()
+        if not text:
+            return []
+        return [item.strip() for item in text.split('|') if item.strip()]
+
+    def normalize_combat_type(value):
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.isdigit():
+            return int(text)
+
+        normalized = text.casefold()
+        if normalized == 'character':
+            return 1
+        if normalized == 'ship':
+            return 2
+        return text
+
+    def parse_optional_int(value):
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+
+    unit_records = []
+    for row in df.to_dict('records'):
+        base_id = str(row.get('BaseID', '')).strip()
+        name = str(row.get('Name', '')).strip()
+        if not base_id or not name:
+            continue
+
+        unit_records.append({
+            'base_id': base_id,
+            'name': name,
+            'combat_type': normalize_combat_type(row.get('combat_type', '')),
+            'alignment': str(row.get('alignment', '')).strip(),
+            'role': str(row.get('role', '')).strip(),
+            'categories': split_pipe_values(row.get('categories', '')),
+            'ability_classes': split_pipe_values(row.get('ability_classes', '')),
+            'image': str(row.get('image', '')).strip(),
+            'ship': str(row.get('ship', '')).strip(),
+            'era': str(row.get('era', '')).strip(),
+            'unit_relic_all': parse_optional_int(row.get('unit_relic_all', '')),
+            'unit_relic_guilds_100': parse_optional_int(row.get('unit_relic_guilds_100', '')),
+            'unit_relic_kyber_1000': parse_optional_int(row.get('unit_relic_kyber_1000', '')),
+        })
+
+    return unit_records
+
+
+@st.cache_data
+def load_character_data():
+    """Lädt Character-Metadaten aus dem kanonischen Unit-Katalog."""
+    return [unit for unit in load_unit_catalog_data() if unit.get('combat_type') == 1]
 
 
 @st.cache_data
 def load_ship_data():
-    """Lädt die Schiffsdaten aus der JSON-Datei."""
-    try:
-        with open('data/ships.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        st.warning("⚠️ ships.json not found!")
-        return []
-    except json.JSONDecodeError:
-        st.error("❌ Error loading ships.json!")
-        return []
+    """Lädt Ship-Metadaten aus dem kanonischen Unit-Katalog."""
+    return [unit for unit in load_unit_catalog_data() if unit.get('combat_type') == 2]
 
 @st.cache_data
 def load_units_data():
-    """Lädt und kombiniert Character- und Schiffsdaten."""
-    characters = load_character_data()
-    ships = load_ship_data()
-    # Kombiniere beide Listen
-    all_units = characters + ships
-    return all_units
+    """Lädt alle Unit-Metadaten aus dem kanonischen Unit-Katalog."""
+    return load_unit_catalog_data()
 
 @st.cache_data
 def load_character_relevance_data():
-    """Lädt character_relevance.csv mit key_character Flag, relic_rec und notes."""
+    """Lädt optionale Key-/Target-Metadaten aus unit_list.csv, falls vorhanden."""
     try:
-        df = pd.read_csv('data/character_relevance.csv')
-        # Erstelle Dict: BaseID -> key_character (yes/no)
-        relevance_dict = dict(zip(df['BaseID'], df['key_character']))
-        # Erstelle Dict: BaseID -> relic_rec (empfohlenes Relic-Level)
-        relic_rec_dict = dict(zip(df['BaseID'], df['relic_rec']))
-        # Erstelle Dict: BaseID -> notes (Kommentar)
-        notes_dict = dict(zip(df['BaseID'], df['notes']))
-        return relevance_dict, relic_rec_dict, notes_dict
+        df = pd.read_csv('data/unit_list.csv', encoding='utf-8-sig', dtype=str, keep_default_na=False)
     except FileNotFoundError:
-        st.warning("⚠️ character_relevance.csv not found!")
+        st.error("❌ unit_list.csv not found!")
         return {}, {}, {}
     except Exception as e:
-        st.error(f"❌ Error loading character_relevance.csv: {e}")
+        st.error(f"❌ Error loading unit_list.csv: {e}")
         return {}, {}, {}
+
+    relevance_dict = {}
+    if 'default_key_unit' in df.columns:
+        for row in df[['BaseID', 'default_key_unit']].to_dict('records'):
+            base_id = str(row.get('BaseID', '')).strip()
+            key_value = str(row.get('default_key_unit', '')).strip()
+            if base_id and key_value:
+                relevance_dict[base_id] = key_value
+
+    relic_rec_dict = {}
+    if 'default_relic_target' in df.columns:
+        for row in df[['BaseID', 'default_relic_target']].to_dict('records'):
+            base_id = str(row.get('BaseID', '')).strip()
+            target_value = str(row.get('default_relic_target', '')).strip()
+            if base_id and target_value.isdigit():
+                relic_rec_dict[base_id] = int(target_value)
+
+    notes_dict = {}
+    if 'notes' in df.columns:
+        for row in df[['BaseID', 'notes']].to_dict('records'):
+            base_id = str(row.get('BaseID', '')).strip()
+            note_value = str(row.get('notes', '')).strip()
+            if base_id and note_value:
+                notes_dict[base_id] = note_value
+
+    return relevance_dict, relic_rec_dict, notes_dict
+
+
+@st.cache_data
+def build_selected_guild_benchmark_lookup(df_newest):
+    """Berechnet benchmarkartige Relic-Zielwerte aus dem aktuellen Guild-Snapshot."""
+    empty_result = {'Character': {}, 'Ship': {}}
+    if df_newest is None or df_newest.empty:
+        return empty_result
+
+    player_count = df_newest['AllyCode'].nunique()
+    if player_count == 0:
+        return empty_result
+
+    df_benchmarks = df_newest[['AllyCode', 'BaseId', 'CombatType', 'RelicLevel']].copy()
+    df_benchmarks['RelicLevel'] = pd.to_numeric(df_benchmarks['RelicLevel'], errors='coerce').fillna(0).astype(int)
+    df_benchmarks = df_benchmarks[df_benchmarks['RelicLevel'] > 0]
+    df_benchmarks = df_benchmarks.drop_duplicates(subset=['AllyCode', 'BaseId'])
+
+    if df_benchmarks.empty:
+        return empty_result
+
+    required_count = player_count / 2.0
+    result = {'Character': {}, 'Ship': {}}
+
+    for combat_type in COMBAT_TYPES:
+        df_type = df_benchmarks[df_benchmarks['CombatType'] == combat_type]
+        if df_type.empty:
+            continue
+
+        for base_id, unit_rows in df_type.groupby('BaseId'):
+            relic_levels = unit_rows['RelicLevel']
+            benchmark_level = None
+
+            for relic_level in range(10, 0, -1):
+                if (relic_levels >= relic_level).sum() >= required_count:
+                    benchmark_level = relic_level
+                    break
+
+            if benchmark_level is not None:
+                result[combat_type][base_id] = benchmark_level
+
+    return result
+
+
+def get_benchmark_policy_from_session():
+    """Liest die aktuelle Benchmark-Policy aus dem Session State."""
+    benchmark_source = st.session_state.get('benchmark_source', DEFAULT_BENCHMARK_SOURCE)
+    if benchmark_source not in BENCHMARK_SOURCE_LABELS:
+        benchmark_source = DEFAULT_BENCHMARK_SOURCE
+
+    benchmark_min_relic = st.session_state.get('benchmark_min_relic', DEFAULT_BENCHMARK_MIN_RELIC)
+    try:
+        benchmark_min_relic = int(benchmark_min_relic)
+    except (TypeError, ValueError):
+        benchmark_min_relic = DEFAULT_BENCHMARK_MIN_RELIC
+
+    if benchmark_min_relic not in BENCHMARK_RELIC_OPTIONS:
+        benchmark_min_relic = DEFAULT_BENCHMARK_MIN_RELIC
+
+    return benchmark_source, benchmark_min_relic
+
+
+def get_benchmark_filter_enabled():
+    """Liest den globalen Benchmark-Filterstatus aus dem Session State."""
+    return bool(st.session_state.get(BENCHMARK_FILTER_STATE_KEY, DEFAULT_BENCHMARK_FILTER_ENABLED))
+
+
+def sync_benchmark_filter_widget_states():
+    """Spiegelt den globalen Benchmark-Filterstatus in die sichtbaren Widgets."""
+    benchmark_filter_enabled = get_benchmark_filter_enabled()
+
+    if st.session_state.get(BENCHMARK_FILTER_SIDEBAR_WIDGET_KEY) != benchmark_filter_enabled:
+        st.session_state[BENCHMARK_FILTER_SIDEBAR_WIDGET_KEY] = benchmark_filter_enabled
+    if st.session_state.get(BENCHMARK_FILTER_PROGRESS_WIDGET_KEY) != benchmark_filter_enabled:
+        st.session_state[BENCHMARK_FILTER_PROGRESS_WIDGET_KEY] = benchmark_filter_enabled
+
+    return benchmark_filter_enabled
+
+
+def initialize_benchmark_filter_state():
+    """Migriert alte Keys und initialisiert den globalen Benchmark-Filterstatus."""
+    legacy_progress_value = st.session_state.pop('progress_benchmark_filter_enabled', None)
+    legacy_character_value = st.session_state.pop('character_benchmark_filter_enabled', None)
+
+    if BENCHMARK_FILTER_STATE_KEY not in st.session_state:
+        if legacy_progress_value is not None:
+            st.session_state[BENCHMARK_FILTER_STATE_KEY] = bool(legacy_progress_value)
+        elif legacy_character_value is not None:
+            st.session_state[BENCHMARK_FILTER_STATE_KEY] = bool(legacy_character_value)
+        else:
+            st.session_state[BENCHMARK_FILTER_STATE_KEY] = DEFAULT_BENCHMARK_FILTER_ENABLED
+
+    return sync_benchmark_filter_widget_states()
+
+
+def set_benchmark_filter_enabled(enabled):
+    """Schreibt den globalen Benchmark-Filterstatus und leert abhaengige Progress-Caches."""
+    st.session_state[BENCHMARK_FILTER_STATE_KEY] = bool(enabled)
+    st.session_state.player_clicked = False
+    st.session_state.pop('player_overview_cache', None)
+    st.session_state.pop('date_columns_cache', None)
+
+
+def on_sidebar_benchmark_filter_change():
+    """Synchronisiert den globalen Benchmark-Filterstatus aus dem Sidebar-Widget."""
+    set_benchmark_filter_enabled(
+        st.session_state.get(BENCHMARK_FILTER_SIDEBAR_WIDGET_KEY, DEFAULT_BENCHMARK_FILTER_ENABLED)
+    )
+
+
+def on_progress_benchmark_filter_change():
+    """Synchronisiert den globalen Benchmark-Filterstatus aus dem Progress-Widget."""
+    set_benchmark_filter_enabled(
+        st.session_state.get(BENCHMARK_FILTER_PROGRESS_WIDGET_KEY, DEFAULT_BENCHMARK_FILTER_ENABLED)
+    )
+
+
+def resolve_unit_benchmark_target(unit_record, benchmark_source, selected_guild_benchmarks):
+    """Ermittelt den aktuell gueltigen Zielwert fuer eine Unit."""
+    if benchmark_source == BENCHMARK_SOURCE_OFF:
+        return None
+
+    base_id = unit_record.get('base_id')
+    combat_type = unit_record.get('combat_type')
+    if not base_id:
+        return None
+
+    if combat_type == 2:
+        return selected_guild_benchmarks.get('Ship', {}).get(base_id)
+
+    if benchmark_source == BENCHMARK_SOURCE_SELECTED_GUILD:
+        return selected_guild_benchmarks.get('Character', {}).get(base_id)
+
+    benchmark_column = BENCHMARK_SOURCE_COLUMNS.get(benchmark_source)
+    if not benchmark_column:
+        return None
+
+    target_value = unit_record.get(benchmark_column)
+    return int(target_value) if target_value is not None else None
+
+
+def build_benchmark_target_lookup(unit_records, benchmark_source, selected_guild_benchmarks):
+    """Erzeugt die aktuellen Ziel-Relic-Werte fuer alle Units."""
+    target_lookup = {}
+
+    for unit_record in unit_records:
+        target_value = resolve_unit_benchmark_target(unit_record, benchmark_source, selected_guild_benchmarks)
+        if target_value is not None:
+            target_lookup[unit_record['base_id']] = target_value
+
+    return target_lookup
+
+
+def filter_units_by_benchmark(unit_records, benchmark_source, benchmark_min_relic, selected_guild_benchmarks, available_base_ids=None, benchmark_filter_enabled=True):
+    """Filtert Unit-Metadaten optional anhand der aktiven Benchmark-Policy."""
+    allowed_base_ids = set(available_base_ids) if available_base_ids is not None else None
+    filtered_units = []
+
+    for unit_record in unit_records:
+        base_id = unit_record.get('base_id')
+        if not base_id:
+            continue
+
+        if allowed_base_ids is not None and base_id not in allowed_base_ids:
+            continue
+
+        if not benchmark_filter_enabled or benchmark_source == BENCHMARK_SOURCE_OFF:
+            filtered_units.append(unit_record)
+            continue
+
+        target_value = resolve_unit_benchmark_target(unit_record, benchmark_source, selected_guild_benchmarks)
+        if target_value is None or target_value < benchmark_min_relic:
+            continue
+
+        filtered_units.append(unit_record)
+
+    return filtered_units
+
+
+def format_benchmark_policy_label(benchmark_source, benchmark_min_relic):
+    """Formatiert die aktuelle Benchmark-Policy fuer UI-Titel."""
+    if benchmark_source == BENCHMARK_SOURCE_OFF:
+        return 'all units'
+
+    source_label = BENCHMARK_SOURCE_LABELS.get(benchmark_source, 'Benchmark')
+    return f"{source_label}"
 
 @st.cache_data
 def load_relic_costs():
@@ -213,11 +494,51 @@ def calculate_total_relic_costs(char_overview, player_relic_dict, relic_rec_dict
     
     return totals
 
+
+def toggle_checked_player(player_name, set_player_clicked=False):
+    """Toggle the checked state for a player stored in session state."""
+    player_base = st.session_state.get('player_base_global')
+    if player_base is None or player_name not in player_base['Name'].values:
+        return
+
+    current_state = player_base.loc[
+        player_base['Name'] == player_name,
+        'Checked'
+    ].iloc[0]
+
+    st.session_state.player_base_global.loc[
+        st.session_state.player_base_global['Name'] == player_name,
+        'Checked'
+    ] = not current_state
+
+    if set_player_clicked:
+        st.session_state.player_clicked = True
+
+
+def render_focusless_dataframe_css(container_key):
+    """Hide Glide's active-cell accent for specific dataframe containers."""
+    st.markdown(
+        f"""
+        <style>
+        .st-key-{container_key} [data-testid="stDataFrame"] .stDataFrameGlideDataEditor {{
+            --gdg-accent-color: transparent !important;
+            --gdg-accent-light: transparent !important;
+            --gdg-resize-indicator-color: transparent !important;
+        }}
+
+        .st-key-{container_key} [data-testid="stDataFrame"] canvas[data-testid="data-grid-canvas"]:focus {{
+            outline: none !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 @st.cache_data
 def get_available_guilds():
-    """Scannt hu_data Ordner und gibt Liste aller Guilds zurück (plain + encrypted CSVs)."""
-    pattern_plain = "hu_data/*Full.csv"
-    pattern_encrypted = "hu_data/*Full.csv.encrypted"
+    """Scannt data/hotutils Ordner und gibt Liste aller Guilds zurück (plain + encrypted CSVs)."""
+    pattern_plain = "data/hotutils/*Full.csv"
+    pattern_encrypted = "data/hotutils/*Full.csv.encrypted"
     
     files_plain = glob.glob(pattern_plain)
     files_encrypted = glob.glob(pattern_encrypted)
@@ -247,8 +568,8 @@ def get_available_guilds():
 @st.cache_data
 def get_dates_for_guild(guild_name):
     """Gibt alle verfügbaren Daten für eine Guild zurück (Repository - plain + encrypted)."""
-    pattern_plain = f"hu_data/*{guild_name}Full.csv"
-    pattern_encrypted = f"hu_data/*{guild_name}Full.csv.encrypted"
+    pattern_plain = f"data/hotutils/*{guild_name}Full.csv"
+    pattern_encrypted = f"data/hotutils/*{guild_name}Full.csv.encrypted"
     
     files_plain = glob.glob(pattern_plain)
     files_encrypted = glob.glob(pattern_encrypted)
@@ -298,8 +619,8 @@ def load_guild_data(guild_filter, selected_dates):
             pass  # Kein Key vorhanden = nur unverschlüsselte CSVs laden
     
     # Suche nach CSVs (verschlüsselt UND unverschlüsselt)
-    pattern_plain = f"hu_data/*{guild_filter}Full.csv"
-    pattern_encrypted = f"hu_data/*{guild_filter}Full.csv.encrypted"
+    pattern_plain = f"data/hotutils/*{guild_filter}Full.csv"
+    pattern_encrypted = f"data/hotutils/*{guild_filter}Full.csv.encrypted"
     
     files_plain = glob.glob(pattern_plain)
     files_encrypted = glob.glob(pattern_encrypted)
@@ -547,7 +868,7 @@ def show_start_screen():
         guilds_df = get_available_guilds()
         
         if guilds_df.empty:
-            st.error("❌ No guilds found! Please place CSVs in hu_data/ folder.")
+            st.error("❌ No guilds found! Please place CSVs in data/hotutils/ folder.")
             st.info("📝 Filename format: `YYYY-MM-DD GuildNameFull.csv`")
             return
         
@@ -795,20 +1116,8 @@ def show_start_screen():
                         st.warning("⚠️ Please select at least one date from the repository!")
 
 def apply_filters(characters_data, alignment_filter, categories_filter, role_filter, ability_classes_filter, key_relevance_filter=None, relevance_dict=None, categories_use_and=False, ability_classes_use_and=False):
-    """Wendet Filter auf die Charakterdaten an."""
+    """Wendet Alignment-, Kategorien-, Rollen- und Ability-Filter auf Unit-Metadaten an."""
     filtered = characters_data.copy()
-    
-    # Key Relevance Filter (zuerst anwenden)
-    if key_relevance_filter and relevance_dict:
-        # Wenn nur eine Option ausgewählt ist
-        if len(key_relevance_filter) == 1:
-            if '👍' in key_relevance_filter:
-                # Nur Key Characters
-                filtered = [char for char in filtered if relevance_dict.get(char.get('base_id'), 'no') == 'yes']
-            elif '👎' in key_relevance_filter:
-                # Nur 👎 (keine Key Characters)
-                filtered = [char for char in filtered if relevance_dict.get(char.get('base_id'), 'no') == 'no']
-        # Wenn beide oder keine ausgewählt sind, zeige alle (kein Filter)
     
     if alignment_filter:  # Wenn Liste nicht leer
         filtered = [char for char in filtered if char.get('alignment') in alignment_filter]
@@ -847,28 +1156,7 @@ def show_guild_relics(df_newest, filtered_characters, characters_data, filters_a
     show_ships = 'Ship' in combat_type_filter or not combat_type_filter
     
     filtered_base_ids_chars = st.session_state.get('filtered_base_ids', []) if show_characters else []
-    
-    # Für Ships: Nutze relevance_dict und key_relevance_filter
-    filtered_base_ids_ships = []
-    if show_ships:
-        relevance_dict = relevance_dict or {}
-        available_ships = set(df_newest[df_newest['CombatType'] == 'Ship']['BaseId'].unique())
-        
-        # Filtere Ships basierend auf Key Relevance Filter
-        if key_relevance_filter:
-            if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-                # Nur Key Ships
-                filtered_base_ids_ships = [base_id for base_id, value in relevance_dict.items() 
-                                          if value == 'yes' and base_id in available_ships]
-            elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-                # Nur Non-Key Ships
-                filtered_base_ids_ships = [base_id for base_id, value in relevance_dict.items() 
-                                          if value == 'no' and base_id in available_ships]
-            else:
-                # Beide oder keine = Alle Ships
-                filtered_base_ids_ships = list(available_ships)
-        else:
-            filtered_base_ids_ships = list(available_ships)
+    filtered_base_ids_ships = st.session_state.get('filtered_ship_base_ids', []) if show_ships else []
     
     # Kombiniere Characters und Ships basierend auf Combat Type Filter
     all_filtered_base_ids = filtered_base_ids_chars + filtered_base_ids_ships
@@ -902,8 +1190,9 @@ def show_guild_relics(df_newest, filtered_characters, characters_data, filters_a
     
     st.markdown(title, unsafe_allow_html=True)
     
-    # Erstelle ein Mapping von BaseId zu Name für die Anzeige
+    # Erstelle Mappings von BaseId zu Name und Era für die Anzeige
     base_id_to_name = {char['base_id']: char['name'] for char in characters_data}
+    base_id_to_era = {char['base_id']: char.get('era') or None for char in characters_data}
     
     # Get default_ally_code from session state for Player relic level
     default_ally_code = st.session_state.get('default_ally_code', int(DEFAULT_ALLY_CODE))
@@ -941,7 +1230,7 @@ def show_guild_relics(df_newest, filtered_characters, characters_data, filters_a
                 [player_relic_dict.get(base_id, None) for base_id in base_ids]
             )
         ],
-        'Comment': [notes_dict.get(base_id, None) if notes_dict else None for base_id in base_ids],
+        'Era': [base_id_to_era.get(base_id, None) for base_id in base_ids],
         'Guild': char_stats['RelicLevel']['count'].astype(int),
         'R10': char_stats['RelicLevel']['<lambda_0>'].astype(int),
         'R9': char_stats['RelicLevel']['<lambda_1>'].astype(int), 
@@ -952,7 +1241,9 @@ def show_guild_relics(df_newest, filtered_characters, characters_data, filters_a
     
     # Berechne Relic-Kosten (vor reset_index, da BaseId noch im Index ist!)
     if relic_costs:
-        total_costs = calculate_total_relic_costs(char_overview, player_relic_dict, relic_rec_dict, relic_costs)
+        character_base_ids = {char['base_id'] for char in characters_data if char.get('combat_type') == 1}
+        char_overview_for_costs = char_overview[char_overview.index.isin(character_base_ids)]
+        total_costs = calculate_total_relic_costs(char_overview_for_costs, player_relic_dict, relic_rec_dict, relic_costs)
     else:
         total_costs = None
     
@@ -1071,6 +1362,21 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
     if df_filtered.empty:
         st.warning("❌ No data found for the selected filters.")
         return
+
+    char_count = len(filtered_base_ids_chars)
+    ship_count = len(filtered_base_ids_ships)
+
+    title_parts = []
+    if char_count > 0:
+        title_parts.append(f"{char_count} char{'s' if char_count != 1 else ''}")
+    if ship_count > 0:
+        title_parts.append(f"{ship_count} ship{'s' if ship_count != 1 else ''}")
+
+    if title_parts:
+        count_text = " & ".join(title_parts)
+        title = f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_STATS} ({count_text})</h3>'
+    else:
+        title = f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_STATS} (0 chars)</h3>'
     
     # Erstelle Mapping: BaseId -> Name
     base_id_to_name = {char['base_id']: char['name'] for char in characters_data}
@@ -1078,7 +1384,7 @@ def show_guild_stats(df_newest, filtered_characters, characters_data, filters_ac
     # Header mit Titel und Stat-Auswahl
     with st.container(horizontal=True, gap="medium", width =600):
         # Titel (linksbündig)
-        st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_STATS}</h3>', unsafe_allow_html=True)
+        st.markdown(title, unsafe_allow_html=True)
         
         # Stat-Auswahl (rechtsbündig)
         stats_options = ['Speed', 'Health', 'Protection', 'Health+Protection', 'Effective H+P', 'Armor', 'Damage', 'CritChance', 'CritDamage', 'Potency', 'Tenacity']
@@ -1503,7 +1809,7 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
     # Spalte "Name" in "Player" umbenennen für Tab 2
     display_df = display_df.rename(columns={'Name': 'Player'})
     
-    # KEINE Checkbox-Spalte mehr - wird durch on_select ersetzt!
+    # Keine Checkbox-Spalte mehr - die Player-Spalte selbst ist klickbar.
     # Entferne PlayerColor und Checked aus Anzeige-Spalten
     display_df_clean = display_df.drop(columns=['PlayerColor', 'Checked'])
     
@@ -1531,9 +1837,16 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
     # Styling anwenden
     styled_df = display_df_clean.style.apply(highlight_players, axis=1)
     
-    # Spalten-Konfiguration: 32px für row-select + Player (200px) + Stats mit Prozenten wo nötig
+    # Spalten-Konfiguration: Player bleibt optisch an Ort und Stelle, klickbar via ButtonColumn
     column_config = {
-        'Player': st.column_config.TextColumn(width=column_name_width)
+        'Player': st.column_config.ButtonColumn(
+            'Player',
+            width=column_name_width,
+            alignment='left',
+            type='tertiary',
+            on_click=lambda: on_player_click(),
+            key='player_comparison_click'
+        )
     }
     
     for col in display_df_clean.columns:
@@ -1548,58 +1861,31 @@ def show_analytics_tab(df_newest, filtered_characters, characters_data, filters_
                 # Normale Zahlen (Speed, etc.)
                 column_config[col] = st.column_config.NumberColumn(width=column_stat_width, format="%.0f")
     
-    # on_select Callback für Cell-Selection
-    def on_player_select():
-        """Callback wenn Spieler-Zelle ausgewählt wird - toggle den Spieler der Zeile."""
-        # Hole Selection-Event
-        selection = st.session_state.player_comparison_table_selection
-        
-        # Zugriff auf selection dict
-        if hasattr(selection, 'selection'):
-            sel_dict = selection.selection
-        elif isinstance(selection, dict):
-            sel_dict = selection.get('selection', {})
-        else:
+    def on_player_click():
+        """Toggle the clicked player without using dataframe cell selection."""
+        click = st.session_state.get('player_comparison_click')
+        if click is None:
             return
-        
-        selected_cells = sel_dict.get('cells', [])
-        
-        # Extrahiere Zeilen-Index aus erster Zelle: (row_idx, column_name)
-        if selected_cells:
-            cell = selected_cells[0]
-            if isinstance(cell, (list, tuple)) and len(cell) >= 1:
-                row_idx = cell[0]
-            elif isinstance(cell, dict):
-                row_idx = cell.get('row', 0)
-            else:
-                return
-            
-            player_name = display_df_clean.iloc[row_idx]['Player']
-            
-            if player_name in st.session_state.player_base_global['Name'].values:
-                # Toggle: checked → unchecked, unchecked → checked
-                current_state = st.session_state.player_base_global.loc[
-                    st.session_state.player_base_global['Name'] == player_name, 
-                    'Checked'
-                ].iloc[0]
-                
-                st.session_state.player_base_global.loc[
-                    st.session_state.player_base_global['Name'] == player_name, 
-                    'Checked'
-                ] = not current_state
-                
-    # Tabelle mit on_select
-    st.dataframe(
-        styled_df,
-        hide_index=True,
-        width=table_width,
-        column_config=column_config,
-        height=920,
-        row_height=20,
-        selection_mode="single-cell",
-        on_select=on_player_select,
-        key="player_comparison_table_selection"
-    )
+
+        row_idx = click.row if hasattr(click, 'row') else click.get('row')
+        if row_idx is None or row_idx < 0 or row_idx >= len(display_df_clean):
+            return
+
+        player_name = display_df_clean.iloc[row_idx]['Player']
+        toggle_checked_player(player_name)
+
+    with st.container(key="player_comparison_grid_frame"):
+        render_focusless_dataframe_css("player_comparison_grid_frame")
+
+        st.dataframe(
+            styled_df,
+            hide_index=True,
+            width=table_width,
+            column_config=column_config,
+            height=920,
+            row_height=20,
+            key="player_comparison_table"
+        )
 
 @st.cache_data
 def get_all_player_metrics_per_date(df_all_dates, player_base, key_relevance_filter=None, relevance_dict=None):
@@ -1610,8 +1896,8 @@ def get_all_player_metrics_per_date(df_all_dates, player_base, key_relevance_fil
     Args:
         df_all_dates: Gefilterte Daten für diese Gilde (alle Datenstände, reduzierte Spalten)
         player_base: DataFrame mit [AllyCode, Name] - einheitliche Spielerliste
-        key_relevance_filter: Liste ['👍', '👎'] für Key/Non-Key Character Filter
-        relevance_dict: Dict mit {base_id: {'is_key': True/False}}
+        key_relevance_filter: Kompatibilitäts-Slot für vorgefilterte Character-BaseIds
+        relevance_dict: Ungenutzter Kompatibilitäts-Parameter
     
     Returns:
         DataFrame mit Spalten:
@@ -1622,6 +1908,7 @@ def get_all_player_metrics_per_date(df_all_dates, player_base, key_relevance_fil
         - {date}_Mod6
     """
     available_dates = sorted(df_all_dates['date'].unique(), reverse=True)
+    allowed_base_ids = set(key_relevance_filter) if key_relevance_filter is not None else None
     
     # Start mit player_base (AllyCode, Name)
     result = player_base.copy()
@@ -1632,18 +1919,9 @@ def get_all_player_metrics_per_date(df_all_dates, player_base, key_relevance_fil
         
         # Nur Characters (keine Ships)
         df_chars = df_date[df_date['CombatType'] == 'Character']
-        
-        # Wende Key Relevance Filter an (wenn aktiv) - nur einmal pro Datum!
-        if key_relevance_filter and relevance_dict:
-            if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-                # Nur Key Characters (key_character == 'yes')
-                key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'yes']
-                df_chars = df_chars[df_chars['BaseId'].isin(key_base_ids)]
-            elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-                # Nur Non-Key Characters (key_character == 'no')
-                non_key_base_ids = [base_id for base_id, value in relevance_dict.items() if value == 'no']
-                df_chars = df_chars[df_chars['BaseId'].isin(non_key_base_ids)]
-            # Wenn beide oder keines: alle Characters
+
+        if allowed_base_ids is not None:
+            df_chars = df_chars[df_chars['BaseId'].isin(allowed_base_ids)]
         
         # RELICS: Zähle jedes Relic-Level separat
         for relic_level in [6, 7, 8, 9, 10]:
@@ -1672,12 +1950,17 @@ def get_all_player_metrics_per_date(df_all_dates, player_base, key_relevance_fil
 
 def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevance_dict):
     """Progress Tab - konsolidierte Ansicht für Relics, Omicrons und Speed Mods."""
+    benchmark_policy = key_relevance_filter if isinstance(key_relevance_filter, dict) else {
+        'source': DEFAULT_BENCHMARK_SOURCE,
+        'min_relic': DEFAULT_BENCHMARK_MIN_RELIC,
+    }
+    initialize_benchmark_filter_state()
     
     # Callback für Radio Button
     def on_metric_type_change():
         """Callback um Session State sofort zu aktualisieren."""
         st.session_state.progress_metric_type = st.session_state.progress_metric_radio
-    
+
     # Hole player_base DIREKT aus Session State
     player_base = st.session_state.player_base_global
     
@@ -1694,23 +1977,12 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
         st.session_state.player_speed_selection = ['20+', '25+']  
     if 'player_mod6_selection' not in st.session_state:
         st.session_state.player_mod6_selection = ['Mod6']
-    
+
     # Header mit Titel, Date-Dropdown, Segmented Control und Radio
-    with st.container(width=1200, horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", gap="small"):
+    with st.container(width=1320, horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", gap="small"):
         # Titel mit dynamischem Suffix basierend auf Key Relevance Filter
-        with st.container(width=240):
-            # Bestimme Titel-Suffix
-            if key_relevance_filter:
-                if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-                    title_suffix = " (key)"
-                elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-                    title_suffix = " (rest)"
-                else:
-                    title_suffix = " (all)"
-            else:
-                title_suffix = " (all)"
-            
-            st.markdown(f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_PROGRESS}{title_suffix}</h3>', unsafe_allow_html=True)
+        with st.container(width=360):
+            title_placeholder = st.empty()
         
         # Compare Date Dropdown
         available_dates = sorted(df_all_dates['date'].unique(), reverse=True)
@@ -1730,6 +2002,14 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
             width =150,
             help="Select the date to compare your current metrics against.",
             on_change=lambda: setattr(st.session_state, 'compare_date_select', st.session_state.compare_date_progress)
+        )
+
+        st.toggle(
+            "Benchmark",
+            key=BENCHMARK_FILTER_PROGRESS_WIDGET_KEY,
+            help="When enabled, Progress only counts units matching the selected benchmark.",
+            disabled=benchmark_policy.get('source') == BENCHMARK_SOURCE_OFF,
+            on_change=on_progress_benchmark_filter_change,
         )
         
         # Segmented Control abhängig vom Metric-Typ (nur anzeigen wenn Typ gesetzt)
@@ -1795,6 +2075,39 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
             label_visibility="collapsed",
             on_change=on_metric_type_change  # Callback für sofortige Aktualisierung
         )
+
+    benchmark_filter_enabled = get_benchmark_filter_enabled()
+
+    progress_benchmark_active = (
+        benchmark_filter_enabled
+        and benchmark_policy.get('source') != BENCHMARK_SOURCE_OFF
+    )
+
+    df_newest = st.session_state.get('df_newest_cached', None)
+    if df_newest is None or df_newest.empty:
+        newest_date = df_all_dates['date'].max()
+        df_newest = df_all_dates[df_all_dates['date'] == newest_date]
+
+    unit_catalog = load_units_data()
+    character_units = [unit for unit in unit_catalog if unit.get('combat_type') == 1]
+    selected_guild_benchmarks = build_selected_guild_benchmark_lookup(df_newest)
+    available_character_base_ids = set(df_newest[df_newest['CombatType'] == 'Character']['BaseId'].unique())
+
+    progress_filtered_characters = filter_units_by_benchmark(
+        character_units,
+        benchmark_policy.get('source'),
+        benchmark_policy.get('min_relic'),
+        selected_guild_benchmarks,
+        available_character_base_ids,
+        benchmark_filter_enabled=progress_benchmark_active,
+    )
+    filtered_base_ids = [char['base_id'] for char in progress_filtered_characters]
+
+    total_chars = len(filtered_base_ids)
+    title_placeholder.markdown(
+        f'<h3 style="margin-top: -12px; margin-bottom: 0;">{TAB_PROGRESS} ({total_chars} chars)</h3>',
+        unsafe_allow_html=True,
+    )
     
     # Validierung: mindestens eine Metrik ausgewählt
     if not selected:
@@ -1812,7 +2125,7 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
     if not st.session_state.get('player_clicked', False):
         # Normale Berechnung: EINMAL alle gecachten Daten holen (Mega-DataFrame!)
         player_base_minimal = player_base[['AllyCode', 'Name']].copy()
-        df_all = get_all_player_metrics_per_date(df_all_dates, player_base_minimal, key_relevance_filter, relevance_dict)
+        df_all = get_all_player_metrics_per_date(df_all_dates, player_base_minimal, filtered_base_ids, None)
         
         # Extrahiere nur relevante Spalten basierend auf Metric-Typ
         if metric_type == 'Relics':
@@ -1933,7 +2246,14 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
     
     # Column configuration
     column_config = {
-        'Name': st.column_config.TextColumn('Player Name'),
+        'Name': st.column_config.ButtonColumn(
+            'Player Name',
+            width='medium',
+            alignment='left',
+            type='tertiary',
+            on_click=lambda: on_progress_click(),
+            key='progress_player_click'
+        ),
         'AllyCode': st.column_config.TextColumn('AllyCode'),
         'Δ': st.column_config.NumberColumn(
             'Δ',
@@ -1948,59 +2268,32 @@ def show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevanc
         label = f"📍 {col}" if col == compare_date else col
         column_config[col] = st.column_config.NumberColumn(label, format='%d')
     
-    # on_select Callback für Row-Selection
-    def on_progress_select():
-        selection = st.session_state.progress_table_selection
-        
-        if hasattr(selection, 'selection'):
-            sel_dict = selection.selection
-        elif isinstance(selection, dict):
-            sel_dict = selection.get('selection', {})
-        else:
+    def on_progress_click():
+        """Toggle the clicked player and keep the lightweight progress rerun path."""
+        click = st.session_state.get('progress_player_click')
+        if click is None:
             return
-        
-        selected_cells = sel_dict.get('cells', [])
-        
-        if selected_cells:
-            cell = selected_cells[0]
-            if isinstance(cell, (list, tuple)) and len(cell) >= 1:
-                row_idx = cell[0]
-            elif isinstance(cell, dict):
-                row_idx = cell.get('row', 0)
-            else:
-                return
-            
-            player_name = player_overview.iloc[row_idx]['Name']
-            
-            if player_name in st.session_state.player_base_global['Name'].values:
-                # Toggle: checked → unchecked, unchecked → checked
-                current_state = st.session_state.player_base_global.loc[
-                    st.session_state.player_base_global['Name'] == player_name, 
-                    'Checked'
-                ].iloc[0]
-                
-                st.session_state.player_base_global.loc[
-                    st.session_state.player_base_global['Name'] == player_name, 
-                    'Checked'
-                ] = not current_state
-                
-                # Setze Flag: Nur Player-Färbung, keine Neuberechnung nötig!
-                st.session_state.player_clicked = True
-                
-    
-    # Tabelle mit on_select
-    st.dataframe(
-        styled_df,
-        hide_index=True,
-        width="content",
-        height=1100,
-        row_height=21,
-        column_order=("Name", "Δ", date_columns[0], "Metric") + tuple(date_columns[1:]),
-        column_config=column_config,
-        selection_mode="single-cell",
-        on_select=on_progress_select,
-        key="progress_table_selection"
-    )
+
+        row_idx = click.row if hasattr(click, 'row') else click.get('row')
+        if row_idx is None or row_idx < 0 or row_idx >= len(player_overview):
+            return
+
+        player_name = player_overview.iloc[row_idx]['Name']
+        toggle_checked_player(player_name, set_player_clicked=True)
+
+    with st.container(key="progress_grid_frame"):
+        render_focusless_dataframe_css("progress_grid_frame")
+
+        st.dataframe(
+            styled_df,
+            hide_index=True,
+            width="content",
+            height=1100,
+            row_height=21,
+            column_order=("Name", "Δ", date_columns[0], "Metric") + tuple(date_columns[1:]),
+            column_config=column_config,
+            key="progress_table"
+        )
 
 @st.cache_data
 def get_raw_mod_data(df_all_dates, player_base, relevance_dict=None):
@@ -2011,7 +2304,7 @@ def get_raw_mod_data(df_all_dates, player_base, relevance_dict=None):
     Args:
         df_all_dates: DataFrame mit allen Datenständen (wird gefiltert auf neuesten)
         player_base: DataFrame mit [AllyCode, Name] - NUR unveränderliche Spalten!
-        relevance_dict: Optional {base_id: 'yes'/'no'} für IsKey Metadata
+        relevance_dict: Ungenutzter Kompatibilitäts-Parameter
     
     Returns:
         Dict[AllyCode, Dict]: {
@@ -2027,8 +2320,7 @@ def get_raw_mod_data(df_all_dates, player_base, relevance_dict=None):
                         'Sets': {set_name: count},
                         'Categories': [list],
                         'Alignment': str,
-                        'Role': str,
-                        'IsKey': bool
+                        'Role': str
                     }
                 }
             }
@@ -2107,9 +2399,6 @@ def get_raw_mod_data(df_all_dates, player_base, relevance_dict=None):
                         if set_size > 0:
                             set_counts[set_name] = set_counts.get(set_name, 0) + set_size
             
-            # Speichere Character-Daten
-            is_key = relevance_dict.get(base_id, 'no') == 'yes' if relevance_dict else False
-            
             characters[base_id] = {
                 'Name': char_name,
                 'Arrow': primary_stats.get(SLOT_KEY_ARROW, {}),
@@ -2119,8 +2408,7 @@ def get_raw_mod_data(df_all_dates, player_base, relevance_dict=None):
                 'Sets': set_counts,
                 'Categories': categories,
                 'Alignment': char_meta.get('alignment', 'Unknown'),
-                'Role': char_meta.get('role', 'Unknown'),
-                'IsKey': is_key
+                'Role': char_meta.get('role', 'Unknown')
             }
         
         result[ally_code] = {
@@ -2319,7 +2607,7 @@ def show_mod_distribution_tab(df_newest, compare_date, key_relevance_filter, rel
     # NUR unveränderliche Spalten übergeben, damit Cache nicht bei Player-Checks invalidiert wird!
     player_base_minimal = player_base[['AllyCode', 'Name']].copy()
 
-    raw_data = get_raw_mod_data(df_newest, player_base_minimal, relevance_dict)
+    raw_data = get_raw_mod_data(df_newest, player_base_minimal, None)
 
     if not raw_data:
         st.warning("⚠️ No mod data found.")
@@ -2553,11 +2841,11 @@ def show_settings_tab(df_all_dates):
     with st.expander("🎛️ **Sidebar (Filterung)**", expanded=False):
         st.markdown("""
         - **New Selection:** Links oben - zurück zum Startbildschirm
+        - **Benchmark:** Basis für die Bestimmung eines Zielwertes für Relic-Level (Median der Player)
         - **Character Filter:**
           - Combat Type, Alignment, Role, Category und Abilities (!) als die üblichen Filter
           - Category und Abilities können mit **"AND"** oder **"OR"** verknüpft werden
           - Beispiel: Sith "OR" First Order = 32 chars, aber mit "AND" nur DS Rey und Sith Trooper
-        - **Key Characters:** 👍 = 173 key chars mit empfohlenem Relic-Level festgelegt
         - **Character Selection:** Unterster Filter für Auswahl eines einzelnen Characters (wirkt nur in "Char Stats")
         - **Sidebar:** Kann aus- und eingeblendet werden
         """)
@@ -2645,7 +2933,7 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         compare_date: Aktuell ausgewähltes Vergleichsdatum
     
     Returns:
-        Tuple: (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
+        Tuple: (compare_date, benchmark_policy, alignment_filter, categories_filter, 
                 role_filter, ability_classes_filter, filters_active)
     """
     # Sidebar Info (immer anzeigen)
@@ -2655,15 +2943,17 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
     if st.sidebar.button("↩️ New Selection"):
         del st.session_state['analysis_started']
         st.rerun()
-    
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**🎛️ Character Filter:**")
-    
+
     # Initialize session state for filters
     if 'combat_type_filter' not in st.session_state:
         st.session_state.combat_type_filter = ['Character']
-    if 'key_relevance_filter' not in st.session_state:
-        st.session_state.key_relevance_filter = ['👍']
+    if 'benchmark_source' not in st.session_state:
+        st.session_state.benchmark_source = DEFAULT_BENCHMARK_SOURCE
+    if 'benchmark_min_relic' not in st.session_state:
+        st.session_state.benchmark_min_relic = DEFAULT_BENCHMARK_MIN_RELIC
+    initialize_benchmark_filter_state()
+    if 'era_filter' not in st.session_state:
+        st.session_state.era_filter = ALL_ERAS_OPTION
     if 'alignment_filter' not in st.session_state:
         st.session_state.alignment_filter = []
     if 'categories_filter' not in st.session_state:
@@ -2678,6 +2968,72 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         st.session_state.filter_reset_counter = 0
     
     reset_suffix = f"_{st.session_state.filter_reset_counter}"
+    benchmark_source, benchmark_min_relic = get_benchmark_policy_from_session()
+    benchmark_policy = {
+        'source': benchmark_source,
+        'min_relic': benchmark_min_relic,
+    }
+    benchmark_active = benchmark_source != BENCHMARK_SOURCE_OFF
+    benchmark_filter_enabled = get_benchmark_filter_enabled()
+    character_benchmark_active = benchmark_active and benchmark_filter_enabled
+    progress_benchmark_active = benchmark_active and benchmark_filter_enabled
+    unit_catalog = load_units_data()
+    character_units = [unit for unit in unit_catalog if unit.get('combat_type') == 1]
+    ship_units = [unit for unit in unit_catalog if unit.get('combat_type') == 2]
+    selected_guild_benchmarks = build_selected_guild_benchmark_lookup(df_newest)
+
+    st.sidebar.markdown("---")
+    with st.sidebar.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", gap="small"):
+        with st.container(width="stretch"):
+            st.markdown(
+                '<div style="height: 19px; display: flex; align-items: center; gap: 0.35rem; margin: 0; font-weight: 600; line-height: 1; transform: translateY(-7px);">'
+                '<span style="display: inline-flex; align-items: center; line-height: 1;">🎯</span>'
+                '<span style="display: inline-block; line-height: 1;">Benchmark:</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        with st.container(width="content"):
+            st.toggle(
+                "Filter",
+                key=BENCHMARK_FILTER_SIDEBAR_WIDGET_KEY,
+                help="When enabled, Character tabs only show units matching the selected benchmark.",
+                disabled=benchmark_source == BENCHMARK_SOURCE_OFF,
+                on_change=on_sidebar_benchmark_filter_change,
+            )
+
+    benchmark_source_options = list(BENCHMARK_SOURCE_LABELS.keys())
+    col_benchmark_source, col_benchmark_relic = st.sidebar.columns([3, 2])
+    with col_benchmark_source:
+        benchmark_source = st.selectbox(
+            "Benchmark Source",
+            options=benchmark_source_options,
+            index=benchmark_source_options.index(benchmark_source),
+            format_func=lambda source_key: BENCHMARK_SOURCE_LABELS.get(source_key, source_key),
+            key=f"benchmark_source_select{reset_suffix}",
+            label_visibility="collapsed"
+        )
+        st.session_state.benchmark_source = benchmark_source
+
+    with col_benchmark_relic:
+        benchmark_min_relic = st.selectbox(
+            "Min Relic",
+            options=BENCHMARK_RELIC_OPTIONS,
+            index=BENCHMARK_RELIC_OPTIONS.index(benchmark_min_relic),
+            format_func=lambda relic_level: f"R{relic_level}",
+            key=f"benchmark_relic_select{reset_suffix}",
+            label_visibility="collapsed",
+            disabled=benchmark_source == BENCHMARK_SOURCE_OFF
+        )
+        st.session_state.benchmark_min_relic = benchmark_min_relic
+
+    benchmark_policy = {
+        'source': benchmark_source,
+        'min_relic': int(benchmark_min_relic),
+    }
+    benchmark_active = benchmark_source != BENCHMARK_SOURCE_OFF
+    benchmark_filter_enabled = get_benchmark_filter_enabled()
+    character_benchmark_active = benchmark_active and benchmark_filter_enabled
+    progress_benchmark_active = benchmark_active and benchmark_filter_enabled
     
     # Check if active tab is a Player tab
     is_player_tab = st.session_state.get('active_tab', '') in [TAB_PROGRESS]
@@ -2690,68 +3046,45 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
     # ============================================================================
     if is_player_tab:
         # ═══════════════════════════════════════════════════════════════════════
-        # PLAYER TAB (Progress): Minimal - nur Key Relevance Filter
+        # PLAYER TAB (Progress): nur Benchmark-Policy
         # ═══════════════════════════════════════════════════════════════════════
-        
-        # 1. Render: Key Relevance Filter (full width)
-        key_relevance_filter = st.sidebar.segmented_control(
-            "Key Relevance",
-            options=['👍', '👎'],
-            default=st.session_state.get('key_relevance_filter', ['👍']),
-            key=f"key_relevance_segmented{reset_suffix}",
-            selection_mode="multi",
-            label_visibility="collapsed"
-        )
-        if key_relevance_filter != st.session_state.get('key_relevance_filter', ['👍']):
-            st.session_state.key_relevance_filter = key_relevance_filter
-        
-        # 2. Set: Andere Filter leer
+
+        # 1. Set: Andere Filter leer
         combat_type_filter = []
         alignment_filter = []
         categories_filter = []
         role_filter = []
         ability_classes_filter = []
-        filters_active = False
-        
-        # 3. Calculate: available_base_ids (OPTIMIZATION: aus Cache wenn player_clicked)
-        relevance_dict, _, _ = load_character_relevance_data()
-        
-        # OPTIMIZATION: available_base_ids aus Cache holen
+        filters_active = progress_benchmark_active
+
+        # 2. Calculate: available_base_ids (OPTIMIZATION: aus Cache wenn player_clicked)
         if player_clicked and 'available_base_ids_cache' in st.session_state:
-            available_base_ids = st.session_state.available_base_ids_cache
+            available_character_base_ids = st.session_state.available_base_ids_cache
         else:
-            available_base_ids = set(df_newest[df_newest['CombatType'] == 'Character']['BaseId'].unique())
-            st.session_state.available_base_ids_cache = available_base_ids
-        
-        if key_relevance_filter:
-            if '👍' in key_relevance_filter and '👎' not in key_relevance_filter:
-                filtered_base_ids = [base_id for base_id, value in relevance_dict.items() 
-                                   if value == 'yes' and base_id in available_base_ids]
-            elif '👎' in key_relevance_filter and '👍' not in key_relevance_filter:
-                filtered_base_ids = [base_id for base_id, value in relevance_dict.items() 
-                                   if value == 'no' and base_id in available_base_ids]
-            else:
-                filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
-                                   if base_id in available_base_ids]
-        else:
-            filtered_base_ids = [base_id for base_id in relevance_dict.keys() 
-                               if base_id in available_base_ids]
-        
+            available_character_base_ids = set(df_newest[df_newest['CombatType'] == 'Character']['BaseId'].unique())
+            st.session_state.available_base_ids_cache = available_character_base_ids
+
+        filtered_characters = filter_units_by_benchmark(
+            character_units,
+            benchmark_source,
+            benchmark_min_relic,
+            selected_guild_benchmarks,
+            available_character_base_ids,
+            benchmark_filter_enabled=progress_benchmark_active
+        )
+        filtered_base_ids = [char['base_id'] for char in filtered_characters]
+
         # Progress Tab: Ships sind irrelevant, setze leere Liste
         filtered_ship_base_ids = []
-        
+
     else:
         # ═══════════════════════════════════════════════════════════════════════
         # CHARACTER TABS (Overview, Char Stats, Mod Distribution): Volle Filter
         # ═══════════════════════════════════════════════════════════════════════
-        
-        # 1. Load: Character data (needed for all filters)
-        characters_data = load_units_data()
-        
-        # 2. Get: Newest date for filtering (from available_dates)
-        date_filter = available_dates[0]
-        
-        # 3. Render: CombatType + Key Relevance side by side
+
+        st.sidebar.markdown("**🎛️ Character Filter:**")
+
+        # 1. Render: CombatType + Era in der ersten Zeile
         col1, col2 = st.sidebar.columns([3, 2])
         with col1:
             combat_type_filter = st.segmented_control(
@@ -2764,32 +3097,72 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
             )
             if combat_type_filter != st.session_state.get('combat_type_filter', ['Character']):
                 st.session_state.combat_type_filter = combat_type_filter
-        
+
+        available_character_base_ids = set(df_newest[df_newest['CombatType'] == 'Character']['BaseId'].unique())
+        available_ship_base_ids = set(df_newest[df_newest['CombatType'] == 'Ship']['BaseId'].unique())
+
+        benchmark_filtered_characters = filter_units_by_benchmark(
+            character_units,
+            benchmark_source,
+            benchmark_min_relic,
+            selected_guild_benchmarks,
+            available_character_base_ids,
+            benchmark_filter_enabled=character_benchmark_active
+        )
+        benchmark_filtered_ships = filter_units_by_benchmark(
+            ship_units,
+            benchmark_source,
+            benchmark_min_relic,
+            selected_guild_benchmarks,
+            available_ship_base_ids,
+            benchmark_filter_enabled=character_benchmark_active
+        )
+
+        characters_data_filtered = []
+        if combat_type_filter:
+            if 'Character' in combat_type_filter:
+                characters_data_filtered.extend(benchmark_filtered_characters)
+            if 'Ship' in combat_type_filter:
+                characters_data_filtered.extend(benchmark_filtered_ships)
+        else:
+            characters_data_filtered.extend(benchmark_filtered_characters)
+            characters_data_filtered.extend(benchmark_filtered_ships)
+
+        available_eras = list(dict.fromkeys(
+            char.get('era') for char in characters_data_filtered if char.get('era')
+        ))
+        era_options = [ALL_ERAS_OPTION] + available_eras
+        current_era = st.session_state.get('era_filter', ALL_ERAS_OPTION)
+        if current_era not in era_options:
+            current_era = ALL_ERAS_OPTION
+            st.session_state.era_filter = current_era
+
+        era_select_key = f"era_select{reset_suffix}"
+        if era_select_key not in st.session_state or st.session_state[era_select_key] not in era_options:
+            st.session_state[era_select_key] = current_era
+
         with col2:
-            key_relevance_filter = st.segmented_control(
-                "Key Relevance",
-                options=['👍', '👎'],
-                default=st.session_state.get('key_relevance_filter', ['👍']),
-                key=f"key_relevance_segmented{reset_suffix}",
-                selection_mode="multi",
+            era_filter = st.selectbox(
+                "Era",
+                options=era_options,
+                index=era_options.index(st.session_state[era_select_key]),
+                key=era_select_key,
                 label_visibility="collapsed"
             )
-            if key_relevance_filter != st.session_state.get('key_relevance_filter', ['👍']):
-                st.session_state.key_relevance_filter = key_relevance_filter
-        
-        # Filter DataFrame by CombatType
-        if combat_type_filter:
-            df_for_filters = df_newest[df_newest['CombatType'].isin(combat_type_filter)]
-        else:
-            df_for_filters = df_newest
-        
-        # Filter characters data for dynamic filters
-        available_base_ids = set(df_for_filters['BaseId'].unique())
-        characters_data_filtered = [char for char in characters_data if char.get('base_id') in available_base_ids]
-        
+            if era_filter != st.session_state.get('era_filter', ALL_ERAS_OPTION):
+                st.session_state.era_filter = era_filter
+
+        era_filtered_characters = benchmark_filtered_characters
+        era_filtered_ships = benchmark_filtered_ships
+        era_filtered_data = characters_data_filtered
+        if era_filter != ALL_ERAS_OPTION:
+            era_filtered_characters = [char for char in benchmark_filtered_characters if char.get('era') == era_filter]
+            era_filtered_ships = [ship for ship in benchmark_filtered_ships if ship.get('era') == era_filter]
+            era_filtered_data = [unit for unit in characters_data_filtered if unit.get('era') == era_filter]
+
         # Collect all available options
-        all_alignments = sorted(list({char.get('alignment', '') for char in characters_data_filtered if char.get('alignment')}))
-        
+        all_alignments = sorted(list({char.get('alignment', '') for char in era_filtered_data if char.get('alignment')}))
+
         # Alignment Filter
         alignment_filter = st.sidebar.segmented_control(
             "Alignment",
@@ -2801,12 +3174,12 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         )
         if alignment_filter != st.session_state.get('alignment_filter', []):
             st.session_state.alignment_filter = alignment_filter
-        
+
         # Filter characters for subsequent filters
-        filtered_chars_for_categories = characters_data_filtered
+        filtered_chars_for_categories = era_filtered_data
         if alignment_filter:
             filtered_chars_for_categories = [char for char in filtered_chars_for_categories if char.get('alignment') in alignment_filter]
-        
+
         # Available roles
         filtered_chars_for_roles = filtered_chars_for_categories
         roles_set = set()
@@ -2818,7 +3191,7 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
             else:
                 roles_set.add('?')
         available_roles = sorted(list(roles_set))
-        
+
         # Role Filter
         role_filter = st.sidebar.segmented_control(
             "Role",
@@ -2830,10 +3203,10 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         )
         if role_filter != st.session_state.get('role_filter', []):
             st.session_state.role_filter = role_filter
-        
+
         # Available categories
         available_categories = sorted(list({cat for char in filtered_chars_for_categories for cat in char.get('categories', [])}))
-        
+
         # Category Filter with AND/OR toggle
         col_cat_label, col_cat_toggle = st.sidebar.columns([2, 2])
         with col_cat_label:
@@ -2849,7 +3222,7 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
             if categories_use_and != current_state:
                 st.session_state.categories_use_and = categories_use_and
                 st.rerun()
-        
+
         categories_filter = st.sidebar.multiselect(
             "Categories",
             options=available_categories,
@@ -2859,7 +3232,7 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         )
         if categories_filter != st.session_state.get('categories_filter', []):
             st.session_state.categories_filter = categories_filter
-        
+
         # Filter further for ability classes
         filtered_chars_for_abilities = filtered_chars_for_categories
         if role_filter:
@@ -2867,10 +3240,10 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         if categories_filter:
             filtered_chars_for_abilities = [char for char in filtered_chars_for_abilities 
                                           if any(cat in char.get('categories', []) for cat in categories_filter)]
-        
+
         # Available ability classes
         available_ability_classes = sorted(list({ac for char in filtered_chars_for_abilities for ac in char.get('ability_classes', [])}))
-        
+
         # Ability Classes Filter with AND/OR toggle
         col_ac_label, col_ac_toggle = st.sidebar.columns([2, 2])
         with col_ac_label:
@@ -2886,7 +3259,7 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
             if ability_classes_use_and != current_state:
                 st.session_state.ability_classes_use_and = ability_classes_use_and
                 st.rerun()
-        
+
         ability_classes_filter = st.sidebar.multiselect(
             "Ability classes",
             options=available_ability_classes,
@@ -2896,11 +3269,15 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
         )
         if ability_classes_filter != st.session_state.get('ability_classes_filter', []):
             st.session_state.ability_classes_filter = ability_classes_filter
-        
+
         # Reset filters button
         if st.sidebar.button("🗑️ Reset all filters"):
             st.session_state.filter_reset_counter += 1
+            st.session_state.benchmark_source = DEFAULT_BENCHMARK_SOURCE
+            st.session_state.benchmark_min_relic = DEFAULT_BENCHMARK_MIN_RELIC
+            set_benchmark_filter_enabled(DEFAULT_BENCHMARK_FILTER_ENABLED)
             st.session_state.combat_type_filter = []
+            st.session_state.era_filter = ALL_ERAS_OPTION
             st.session_state.alignment_filter = []
             st.session_state.categories_filter = []
             st.session_state.categories_use_and = False
@@ -2910,110 +3287,91 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
             if 'selected_character_tab2' in st.session_state:
                 del st.session_state.selected_character_tab2
             st.rerun()
-        
+
         # 4. Check: Sind Filter aktiv?
-        filters_active = bool(alignment_filter or categories_filter or role_filter or ability_classes_filter)
-        
-        # 5. Calculate: available_base_ids (OPTIMIZATION: aus Cache wenn player_clicked)
-        relevance_dict, _, _ = load_character_relevance_data()
-        
-        if player_clicked and 'available_base_ids_cache' in st.session_state:
-            available_base_ids = st.session_state.available_base_ids_cache
-        else:
-            available_base_ids = set(df_newest[df_newest['CombatType'] == 'Character']['BaseId'].unique())
-            st.session_state.available_base_ids_cache = available_base_ids
-        
-        # 6. Calculate: filtered_base_ids für Characters UND Ships (mit ALLEN Filtern)
-        characters_only = [char for char in characters_data if char.get('combat_type') == 1]
-        ships_only = [ship for ship in characters_data if ship.get('combat_type') == 2]
-        
-        # Filtere Characters
+        combat_type_active = combat_type_filter != ['Character']
+        era_filter_active = era_filter != ALL_ERAS_OPTION
+        filters_active = character_benchmark_active or combat_type_active or era_filter_active or bool(alignment_filter or categories_filter or role_filter or ability_classes_filter)
+
+        # 5. Calculate: filtered_base_ids für Characters UND Ships (mit ALLEN Filtern)
         filtered_characters = apply_filters(
-            characters_only,
+            era_filtered_characters,
             alignment_filter, 
             categories_filter, 
             role_filter, 
             ability_classes_filter,
-            key_relevance_filter=key_relevance_filter,
-            relevance_dict=relevance_dict,
             categories_use_and=st.session_state.get('categories_use_and', False),
             ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
         )
-        filtered_base_ids = [char['base_id'] for char in filtered_characters 
-                           if char['base_id'] in available_base_ids]
-        
-        # Filtere Ships (gleiche Filter-Logik!)
-        available_ship_base_ids = set(df_newest[df_newest['CombatType'] == 'Ship']['BaseId'].unique())
+        filtered_base_ids = [char['base_id'] for char in filtered_characters]
+
         filtered_ships = apply_filters(
-            ships_only,
+            era_filtered_ships,
             alignment_filter,
             categories_filter,
             role_filter,
             ability_classes_filter,
-            key_relevance_filter=key_relevance_filter,
-            relevance_dict=relevance_dict,
             categories_use_and=st.session_state.get('categories_use_and', False),
             ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
         )
-        filtered_ship_base_ids = [ship['base_id'] for ship in filtered_ships
-                                 if ship['base_id'] in available_ship_base_ids]
-        
-        # 7. Render: Character Selection for Tab 2
+        filtered_ship_base_ids = [ship['base_id'] for ship in filtered_ships]
+
+        # 6. Render: Character Selection for Tab 2
         st.sidebar.markdown("---")
         st.sidebar.markdown("**☯ Character Selection:**")
-        
+
         if filters_active:
             available_characters_tab2 = [(char['name'], char['base_id']) 
-                                         for char in characters_data 
+                                         for char in character_units 
                                          if char['base_id'] in filtered_base_ids]
         else:
-            available_characters_tab2 = [(char['name'], char['base_id']) for char in characters_data]
-        
+            available_characters_tab2 = [(char['name'], char['base_id']) for char in character_units]
+
         character_names_tab2 = [name for name, base_id in available_characters_tab2]
-        
+
         if character_names_tab2:
             # Prüfe ob character_from_stats_table gesetzt ist (Klick in Tabelle)
             if 'character_from_stats_table' in st.session_state:
                 clicked_char = st.session_state.character_from_stats_table
-                
+
                 # Prüfe ob clicked character in available list ist
                 if clicked_char in character_names_tab2:
                     # Übernehme clicked character
                     st.session_state.selected_character_tab2 = clicked_char
-                    
+
                     # WICHTIG: Setze auch den Selectbox Key direkt!
                     selectbox_key = f"tab2_character_select{reset_suffix}"
                     st.session_state[selectbox_key] = clicked_char
                 else:
                     # Character nicht mehr verfügbar (Filter geändert) - lösche flag
                     del st.session_state.character_from_stats_table
-                
+
                 # Lösche flag nach Verarbeitung
                 if 'character_from_stats_table' in st.session_state:
                     del st.session_state.character_from_stats_table
-            
+
             # Initialize selected_character_tab2 if not exists
             if 'selected_character_tab2' not in st.session_state:
                 st.session_state.selected_character_tab2 = character_names_tab2[0]
-            
+
             # Ensure selected character is in available list, else reset to first
             if st.session_state.selected_character_tab2 not in character_names_tab2:
                 st.session_state.selected_character_tab2 = character_names_tab2[0]
-            
+
             # Selectbox Key für direkten Zugriff
             selectbox_key = f"tab2_character_select{reset_suffix}"
-            
+
             # Setze Selectbox Key auf aktuellen Wert (falls nicht vorhanden)
             if selectbox_key not in st.session_state:
                 st.session_state[selectbox_key] = st.session_state.selected_character_tab2
-            
+
             # Selectbox OHNE index - nutzt Wert aus Session State Key
             selected_character_tab2 = st.sidebar.selectbox(
                 "Selection for Character Stats:",
                 character_names_tab2,
                 key=selectbox_key
             )
-            
+
             # Update session state if user changed selection via selectbox
             if st.session_state.selected_character_tab2 != selected_character_tab2:
                 st.session_state.selected_character_tab2 = selected_character_tab2
@@ -3036,8 +3394,8 @@ def show_sidebar(df_newest, guild_filter, data_info, player_name, available_date
                 st.session_state.player_base_global['AllyCode'] == default_ally_code
             )
             st.rerun()
-    
-    return (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
+
+    return (compare_date, benchmark_policy, alignment_filter, categories_filter,
             role_filter, ability_classes_filter, filters_active)
 
 
@@ -3189,28 +3547,27 @@ def main():
     # ============================================================================
     # SIDEBAR - Clean function with all filters and controls
     # ============================================================================
-    (compare_date, key_relevance_filter, alignment_filter, categories_filter, 
+    (compare_date, benchmark_policy, alignment_filter, categories_filter,
      role_filter, ability_classes_filter, filters_active) = show_sidebar(
         df_newest, guild_filter, data_info, player_name, available_dates, available_dates[1] if len(available_dates) >= 2 else available_dates[0]
     )
-    
+
     # Lade Charakterdaten für Tab-Content
-    characters_data = load_units_data()
-    relevance_dict, relic_rec_dict, notes_dict = load_character_relevance_data()
+    unit_catalog = load_units_data()
+    character_catalog = load_character_data()
+    _, default_relic_rec_dict, notes_dict = load_character_relevance_data()
+    selected_guild_benchmarks = build_selected_guild_benchmark_lookup(df_newest)
+    if benchmark_policy.get('source') == BENCHMARK_SOURCE_OFF:
+        relic_rec_dict = default_relic_rec_dict
+    else:
+        relic_rec_dict = build_benchmark_target_lookup(unit_catalog, benchmark_policy.get('source'), selected_guild_benchmarks)
     relic_costs = load_relic_costs()
-    
-    # Filter anwenden für gefilterte Character-Liste
-    filtered_characters = apply_filters(
-        characters_data, 
-        alignment_filter, 
-        categories_filter, 
-        role_filter, 
-        ability_classes_filter,
-        key_relevance_filter=key_relevance_filter,
-        relevance_dict=relevance_dict,
-        categories_use_and=st.session_state.get('categories_use_and', False),
-        ability_classes_use_and=st.session_state.get('ability_classes_use_and', False)
-    )
+
+    filtered_character_ids = set(st.session_state.get('filtered_base_ids', []))
+    if filters_active:
+        filtered_characters = [char for char in character_catalog if char['base_id'] in filtered_character_ids]
+    else:
+        filtered_characters = character_catalog
     
     # GLOBAL PLAYER_BASE in Session State - initialize ONCE!
     # This is the central data structure for ALL Player tabs
@@ -3257,15 +3614,15 @@ def main():
     # CONDITIONAL RENDERING - only active tab is executed!
     # Note: active_tab was already updated before sidebar rendering
     if st.session_state.active_tab == TAB_OVERVIEW:
-        show_guild_relics(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
+        show_guild_relics(df_newest, filtered_characters, unit_catalog, filters_active, benchmark_policy, None, relic_rec_dict, notes_dict, relic_costs)
     if st.session_state.active_tab == TAB_STATS:
-        show_guild_stats(df_newest, filtered_characters, characters_data, filters_active, key_relevance_filter, relevance_dict, relic_rec_dict, notes_dict, relic_costs)
+        show_guild_stats(df_newest, filtered_characters, unit_catalog, filters_active, benchmark_policy, None, relic_rec_dict, notes_dict, relic_costs)
     elif st.session_state.active_tab == TAB_PROGRESS:
-        show_progress_tab(df_all_dates, compare_date, key_relevance_filter, relevance_dict)
+        show_progress_tab(df_all_dates, compare_date, benchmark_policy, None)
     elif st.session_state.active_tab == TAB_CHAR_STATS:
-        show_analytics_tab(df_newest, filtered_characters, characters_data, filters_active)
+        show_analytics_tab(df_newest, filtered_characters, character_catalog, filters_active)
     elif st.session_state.active_tab == TAB_MOD_DISTRIBUTION:
-        show_mod_distribution_tab(df_newest, compare_date, key_relevance_filter, relevance_dict)
+        show_mod_distribution_tab(df_newest, compare_date, benchmark_policy, None)
     elif st.session_state.active_tab == TAB_INFO:
         show_settings_tab(df_all_dates)
     
