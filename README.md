@@ -13,48 +13,45 @@ Ermöglicht Multi-Player-Vergleiche über verschiedene Zeitpunkte hinweg basiere
 - **Multi-Zeitpunkt-Analyse**: Vergleiche von bis zu 2 historischen Datenpunkten
 - **CSV Upload**: Zusätzliche Daten können hochgeladen werden
 - **CSV-Verschlüsselung**: Gildendaten im Repository verschlüsselt (Fernet AES-128)
-- **Player Selection**: Individuelle Spieler per Checkbox auswählen/abwählen
+- **Benchmark-Basis**: Vergleich gegen All Guilds, Top 100 Guilds, Top 1000 Kyber oder die eigene Gilde
+- **Era-Filter**: Units können zusätzlich nach Era bzw. Conquest-Zuordnung gefiltert werden
+- **Player Highlighting**: Einzelne Spieler lassen sich tab-übergreifend farblich hervorheben
 - **Color Coding**: Jeder Spieler erhält eine eindeutige Farbe für Vergleiche
 
 ### 📊 Analyse-Tabs
 
-#### Character Overview
-- Filterung nach Combat Type (Characters/Ships), Alignment, Kategorie, Rolle, Ability Classes
-- Festlegung von 👍 Charakteren mit Relic-Level-Empfehlung
+#### Guild Relics
+- Filterung nach Combat Type (Characters/Ships), Era, Alignment, Kategorie, Rolle und Ability Classes
+- Benchmark-basierte Zielwerte für Characters und gildenbasierte Zielwerte für Ships
+- Optionale Benchmark-Filterung direkt auf den angezeigten Unit-Pool
 - **OR/AND Toggle**: Flexible Filterlogik für Categories und Ability Classes
 - **Relic Cost Calculator**: Zeigt benötigte Materialien für Relic-Upgrades
   - Berücksichtigt Player Relic Level vs. Recommended Level
   - Aufgeteilt in Signal Data (4 Typen) und Scrap Materials (11 Typen)
-- Besitz-Übersicht aller Spieler
-- Detaillierte Charakterstatistiken (Power, Speed, Health, Protection, etc.)
-- Gear Level & Relic Level Tracking
+- Besitz-Übersicht der Gilde inklusive Era-Spalte und Relic-Verteilung
 
-#### Character Stats (10 Charts)
-- Interaktive Balkendiagramme für 10 Statistiken:
-  - Relic Level, Gear Level, Character Level
-  - Speed, Health, Protection, Physical Damage/Critical, Special Damage/Critical, Armor
-- Farb-codierte Spieler-Balken
-- Optimierte Performance (<20ms für alle 10 Charts)
+#### Guild Stats
+- Statistische Auswertung für den aktuell gefilterten Unit-Pool
+- Vergleich des markierten Spielers gegen Median, Durchschnitt und Max der Gilde
+- Unterstützt Speed, Health, Protection, Effective H+P, Damage, Crit-Werte, Potency und Tenacity
 
-#### Player Relics
-- Relic-Verteilung pro Spieler
-- Segmented Control: Gesamt vs. Light Side vs. Dark Side
-- Vergleichbare Visualisierung über alle Spieler
+#### Progress
+- Vergleich mehrerer Datenstände für Relics, Omicrons, Speed Mods und Mod6
+- Einheitlicher Benchmark-Filter mit gemeinsamem Session-State über Sidebar und Progress-Tab
+- Delta-Auswertung pro Spieler gegenüber einem auswählbaren Vergleichsdatum
 
-#### Player Omicrons
-- Omicron-Übersicht pro Spieler
-- Segmented Control: Gesamt vs. Light Side vs. Dark Side
-- Identifiziert Spieler mit/ohne Omicrons
+#### Char Stats
+- Interaktive Balkendiagramme für 10 Statistiken eines ausgewählten Characters
+- Spieler können per Klick in Tabelle und Charts farblich markiert werden
+- Optimierte Performance für große Gilden-Roster
 
-#### Player Speed Mods
-- Speed-Mod-Analyse (20+ Speed Mods)
-- Segmented Control: Gesamt vs. Light Side vs. Dark Side
-- Vergleicht High-Speed-Mod-Anzahl zwischen Spielern
+#### Mod Distribution
+- Analyse von Mod Primaries oder Mod Sets auf dem aktuell gefilterten Character-Pool
+- Sortierung nach Gesamtwert, Spielernamen oder einzelner Stat
+- Durchschnittszeile und farbliche Hervorhebung ausgewählter Spieler
 
-#### Settings
-- Header ein-/ausblenden
-- Player-Farben anpassen
-- Uncheck All Button für schnelles Zurücksetzen
+#### App-Info
+- Integriertes Benutzerhandbuch, technische Kennzahlen und Troubleshooting-Hinweise
 
 ### 🚀 Performance-Optimierungen
 - Session State Caching für Validierung
@@ -81,24 +78,36 @@ Ermöglicht Multi-Player-Vergleiche über verschiedene Zeitpunkte hinweg basiere
    ```
    SWGOH-Guild-Progress/
    ├── swgoh_guild_progress.py # Hauptanwendung
-   ├── encrypt_csvs.py         # CSV-Verschlüsselungs-Tool
-   ├── requirements.txt        # Python Dependencies
-   ├── ENCRYPTION.md           # Verschlüsselungs-Dokumentation
+   ├── helper-scripts/
+   │   ├── encrypt_csvs.py             # CSV-Verschlüsselungs-Tool
+   │   ├── extract_era_catalog.py      # Era-Daten aus SWGOH.GG HTML extrahieren
+   │   ├── extract_relic_benchmarks.py # Benchmark-Daten aus SWGOH.GG HTML extrahieren
+   │   └── get_units.py                # Kanonischen Unit-Katalog bauen
+   ├── requirements.txt                # Python Dependencies
+   ├── ENCRYPTION.md                   # Verschlüsselungs-Dokumentation
    ├── .streamlit/
-   │   ├── config.toml        # Streamlit-Konfiguration (Dark Theme)
-   │   └── secrets.toml       # Encryption Key (lokal, nicht committen!)
-   ├── assets/                 # Bilder/Logos (optional)
-   ├── data/                   # Referenzdaten (characters, ships, mods, relic costs)
-   │   ├── characters.json
-   │   ├── ships.json
-   │   ├── statMod.json
-   │   ├── statModSet.json
-   │   ├── character_relevance.csv
-   │   └── relic_costs_cumulative.json
-   └── hu_data/                # CSV-Gildendaten (verschlüsselt!)
-       ├── input/             # Neue CSVs hier ablegen (vor Verschlüsselung)
-       ├── YYYY-MM-DD [Guild]Full.csv.encrypted  # Verschlüsselt
-       └── ...
+   │   ├── config.toml                 # Streamlit-Konfiguration (Dark Theme)
+   │   └── secrets.toml                # Encryption Key (lokal, nicht committen!)
+   ├── assets/                         # Bilder/Logos (optional)
+   ├── data/                           # Referenzdaten, Benchmarks und verschlüsselte Gildendaten
+   │   ├── hotutils/
+   │   │   ├── input/
+   │   │   ├── YYYY-MM-DD [Guild]Full.csv.encrypted
+   │   │   └── ...
+   │   ├── relic_costs_cumulative.json
+   │   ├── relic_benchmarks.csv
+   │   ├── relic_player_data_raw.csv
+   │   ├── unit_era_catalog.csv
+   │   ├── unit_list.csv
+   │   └── swgoh_gg/                   # lokale Rohdaten für Helper, nicht für das öffentliche Repo gedacht
+   │       ├── characters.json
+   │       ├── ships.json
+   │       ├── relics_all.html
+   │       ├── relics_guilds_100.html
+   │       ├── relics_kyber_1000.html
+   │       ├── Eras/
+   │       └── Conquest/
+   └── README.md
    ```
 
 ## Verwendung
@@ -118,10 +127,26 @@ Beispiel: 2025-11-14 670th GUARD BataillonFull.csv
 ```
 
 **Verschlüsselung** (empfohlen für Repository):
-1. Neue CSV in `hu_data/input/` ablegen
-2. `python encrypt_csvs.py` ausführen
-3. Verschlüsselte `.csv.encrypted` Datei wird in `hu_data/` erstellt
+1. Neue CSV in `data/hotutils/input/` ablegen
+2. `python helper-scripts/encrypt_csvs.py` ausführen
+3. Verschlüsselte `.csv.encrypted` Datei wird in `data/hotutils/` erstellt
 4. Details siehe [ENCRYPTION.md](ENCRYPTION.md)
+
+**Kanonische Unit-Daten aktualisieren**:
+1. Lokale SWGOH.GG-Quelldaten in `data/swgoh_gg/` aktualisieren
+   - `characters.json` und `ships.json` lokal für die Helper bereitstellen
+   - Relic-Benchmark-Seiten lokal als einzelne HTML-Dateien speichern:
+      - `data/swgoh_gg/relics_all.html`
+      - `data/swgoh_gg/relics_guilds_100.html`
+      - `data/swgoh_gg/relics_kyber_1000.html`
+   - Era-Seiten lokal als einzelne HTML-Dateien in `data/swgoh_gg/Eras/` ablegen
+   - Conquest-Seiten lokal als einzelne HTML-Dateien in `data/swgoh_gg/Conquest/` ablegen
+   - Empfohlen ist "Webpage, HTML only" beziehungsweise eine einzelne `.html`-Datei; die Helper lesen nur den HTML-Quelltext und nutzen keine zusätzlichen Ressourcenordner
+   - Diese Rohdaten dienen nur der lokalen Vorbereitung und sind per `.gitignore` aus dem öffentlichen Repository ausgeschlossen
+2. `python helper-scripts/extract_era_catalog.py` ausführen
+3. `python helper-scripts/extract_relic_benchmarks.py` ausführen
+4. `python helper-scripts/get_units.py` ausführen
+5. Die App nutzt anschließend `data/unit_list.csv` als stabile Datenbasis
 
 Erforderliche Spalten im CSV:
 - Name, Galactic_Power, Character_Galactic_Power, Ship_Galactic_Power
@@ -148,7 +173,8 @@ Erforderliche Spalten im CSV:
    - Deploy!
 
 **Wichtig**: 
-- CSV-Dateien (verschlüsselt) und JSON-Daten müssen im Repository enthalten sein
+- Für den App-Betrieb müssen die erzeugten CSV-Artefakte und verschlüsselten Gildendaten im Repository enthalten sein
+- Rohe SWGOH.GG-JSON- und HTML-Quelldateien werden nur lokal für die Helper benötigt und nicht öffentlich versioniert
 - `.streamlit/secrets.toml` ist lokal - für Cloud separate Secrets-Konfiguration
 - Encryption Key in beiden Umgebungen gleich halten!
 
@@ -161,23 +187,25 @@ Erforderliche Spalten im CSV:
    - "Start Analysis" klicken
 
 2. **Analyse-Modus**:
-   - Spieler in Sidebar per Checkbox aktivieren
+   - Benchmark-Quelle und optionalen Benchmark-Filter wählen
    - Tabs für verschiedene Analysen durchklicken
-   - Filter anwenden (Combat Type, Alignment, Kategorie, Rolle)
-   - Segmented Controls für Light/Dark Side Vergleiche nutzen
+   - Filter anwenden (Combat Type, Era, Alignment, Kategorie, Rolle, Abilities)
+   - Spieler in Tabellen per Klick farblich hervorheben
 
 ## Technische Details
 
-- **Framework**: Streamlit 1.40+ (Web-Interface)
+- **Framework**: Streamlit 1.60+ (Web-Interface)
 - **Datenverarbeitung**: Pandas (optimiert mit vectorized operations)
 - **Visualisierung**: Plotly (interaktive Balkendiagramme)
 - **Verschlüsselung**: Fernet (AES-128) via `cryptography` Bibliothek
 - **Caching**: Session State für Validierung & Player-Daten
-- **Theme**: Dark Mode Standard (umschaltbar in Settings)
+- **Metadatenbasis**: Kanonischer Unit-Katalog aus `data/unit_list.csv`
 - **Performance**: Chart Rendering <20ms für 10 Charts
 
 ### Architektur-Highlights
-- **get_final_df()**: Lädt und mergt CSV-Dateien (verschlüsselt + Upload)
+- **load_guild_data() / get_newest_df() / get_all_dates_df()**: Laden Repository-Daten und optionalen Upload effizient
+- **Kanonischer Unit-Katalog**: App-Logik hängt an `data/unit_list.csv`, nicht an wechselnden Rohquellen
+- **Helper-Pipeline**: Era- und Benchmark-Daten werden vorab in stabile CSV-Artefakte überführt
 - **Transparente Entschlüsselung**: CSV-Decryption direkt im RAM (keine Temp-Dateien)
 - **Validation Caching**: Teure unique() Operations nur einmal
 - **Dictionary Lookups**: O(1) Player-Farben statt O(n) DataFrame-Zugriffe
@@ -190,7 +218,7 @@ Erforderliche Spalten im CSV:
 
 1. **"Gilde nicht im Repository gefunden"**:
    - Nur Gilden der BΛ Bataillon Allianz haben Zugriff
-   - CSV-Dateien müssen im `hu_data/` Ordner liegen
+   - CSV-Dateien müssen im `data/hotutils/` Ordner liegen
    - Dateiname-Format: `YYYY-MM-DD [Guild Name]Full.csv`
 
 2. **"Keine gemeinsamen Spieler zwischen Upload und Cached-Daten"**:
@@ -198,8 +226,9 @@ Erforderliche Spalten im CSV:
    - Validierung prüft Name-Spalte auf Übereinstimmungen
 
 3. **"Charakterdaten konnten nicht geladen werden"**:
-   - `data/` Ordner mit JSON-Dateien muss vorhanden sein
-   - characters.json, ships.json erforderlich für Filterung
+   - Für die App selbst muss `data/unit_list.csv` vorhanden sein
+   - Falls der kanonische Unit-Katalog neu erzeugt werden muss, werden zusätzlich lokale Quelldateien in `data/swgoh_gg/` von den Helper-Skripten benötigt
+   - Falls Referenzdaten fehlen: Helper-Skripte für Era, Benchmarks und Unit-Katalog erneut ausführen
 
 4. **Performance-Probleme**:
    - Erste Datenladung kann länger dauern (mehrere CSVs mergen)
@@ -211,15 +240,15 @@ Erforderliche Spalten im CSV:
 ### Anpassungen
 - **Neue Tabs**: In `main()` weitere st.tabs() hinzufügen
 - **Filter erweitern**: `available_categories`, `available_roles` anpassen
-- **Player-Farben**: In Settings-Tab individuell konfigurierbar
+- **Player-Farben**: Über die klickbaren Tabellenzustände in den Analyse-Tabs steuern
 - **Theme**: `.streamlit/config.toml` bearbeiten
 
 ### Datenaktualisierung
 1. **Neue Guild hinzufügen**:
-   - CSV-Export aus HotBots in `hu_data/input/` ablegen
+   - CSV-Export aus HotBots in `data/hotutils/input/` ablegen
    - Format: `YYYY-MM-DD [Guild Name]Full.csv`
-   - `python encrypt_csvs.py` ausführen
-   - Verschlüsselte Datei committen: `git add hu_data/*.encrypted`
+   - `python helper-scripts/encrypt_csvs.py` ausführen
+   - Verschlüsselte Datei committen: `git add data/hotutils/*.encrypted`
    - Automatisch im Guild-Filter verfügbar
 
 2. **Zeitpunkte aktualisieren**:
@@ -227,11 +256,13 @@ Erforderliche Spalten im CSV:
    - Datums-Auswahl wird automatisch aktualisiert
 
 3. **Referenzdaten aktualisieren**:
-   - `data/characters.json` für neue Charaktere
-   - `data/ships.json` für neue Schiffe
-   - `data/character_relevance.csv` für Recommended Relic Levels
+   - Lokale SWGOH.GG-Quelldateien in `data/swgoh_gg/` aktualisieren
+   - Erwartete HTML-Dateien in `data/swgoh_gg/`, `data/swgoh_gg/Eras/` und `data/swgoh_gg/Conquest/` als einzelne `.html`-Dateien ablegen
+   - `data/unit_era_catalog.csv` für Era-Zuordnung neu generieren
+   - `data/relic_benchmarks.csv` für Benchmark-Daten neu generieren
+   - `data/unit_list.csv` als kanonische App-Datenbasis neu erzeugen
    - `data/relic_costs_cumulative.json` bei neuen Relic Tiers
-   - HotBots/SWGOH.gg API-Exporte verwenden (https://swgoh.gg/api/characters/ und https://swgoh.gg/api/ships/)
+   - Nur die abgeleiteten Artefakte ins Repository übernehmen, nicht die rohen SWGOH.GG-Quelldateien
 
 ## Support & Kontakt
 
@@ -247,16 +278,22 @@ Bei Fragen oder Problemen:
 
 ### Changelog
 
+- **v1.2** (2026-08-01): Feature Update
+  - Key-Character von manueller Pflege auf Benchmark umgestellt (Top 1000 Kyber etc.)
+  - Chars nach Era/Conquest filterbar
+  - Kanonische Datenbasis über `data/unit_list.csv` und neue Helper-Skripte eingeführt
+  - Gildendaten von `hu_data/` nach `data/hotutils/` verschoben
+
 - **v1.1** (2025-11-22): Security & Feature Update
-  - 🔐 CSV-Verschlüsselung mit Fernet (AES-128)
-  - 📊 Relic Cost Calculator in Character Overview
-  - 🎛️ OR/AND Toggle für Categories & Ability Classes Filter
-  - ⚙️ Performance: base_ids Iteration optimiert
-  - 📝 Umfassende Dokumentation (ENCRYPTION.md)
+  - CSV-Verschlüsselung mit Fernet (AES-128)
+  - Relic Cost Calculator in Character Overview
+  - OR/AND Toggle für Categories & Ability Classes Filter
+  - Performance: base_ids Iteration optimiert
+  - Umfassende Dokumentation (ENCRYPTION.md)
 
 - **v1.0** (2025-11-15): Initial Release
   - Multi-Guild Support für BΛ Bataillon
-  - 6 Analyse-Tabs (Overview, Stats, Relics, Omicrons, Speed Mods, Settings)
+  - Erste Analyse-Tabs als Basis für die heutige App-Struktur
   - CSV Upload Feature
   - Performance-Optimierungen (Chart Coloring: 97% schneller)
   - Dark Theme Standard
