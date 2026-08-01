@@ -2,7 +2,7 @@
 
 Eine umfassende Analyseanwendung für Star Wars Galaxy of Heroes Gildendaten der **BΛ Bataillon Allianz**.
 
-Ermöglicht Multi-Player-Vergleiche über verschiedene Zeitpunkte hinweg basierend auf HotBots CSV-Exporten.
+Ermöglicht Multi-Player-Vergleiche über verschiedene Zeitpunkte hinweg basierend auf HotUtils-Roster-Exporten.
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://swgoh-guild-progress.streamlit.app/)
 
@@ -119,7 +119,7 @@ streamlit run swgoh_guild_progress.py
 
 Die Anwendung ist dann unter `http://localhost:8501` verfügbar.
 
-### CSV-Dateiformat (HotBots Export)
+### CSV-Dateiformat (HotUtils-Roster-Export)
 Dateinamen müssen folgendem Format entsprechen:
 ```
 YYYY-MM-DD [Guild Name]Full.csv
@@ -245,7 +245,7 @@ Erforderliche Spalten im CSV:
 
 ### Datenaktualisierung
 1. **Neue Guild hinzufügen**:
-   - CSV-Export aus HotBots in `data/hotutils/input/` ablegen
+   - Roster-Export aus HotUtils in `data/hotutils/input/` ablegen
    - Format: `YYYY-MM-DD [Guild Name]Full.csv`
    - `python helper-scripts/encrypt_csvs.py` ausführen
    - Verschlüsselte Datei committen: `git add data/hotutils/*.encrypted`
@@ -267,7 +267,7 @@ Erforderliche Spalten im CSV:
 ## Support & Kontakt
 
 Bei Fragen oder Problemen:
-1. Überprüfe CSV-Dateiformat (HotBots Export)
+1. Überprüfe CSV-Dateiformat (HotUtils-Roster-Export)
 2. Kontrolliere Spaltenbezeichnungen (Case-Sensitive)
 3. Prüfe Browser-Konsole für JavaScript-Fehler
 4. Streamlit-Logs für Python-Exceptions
