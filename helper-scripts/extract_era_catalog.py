@@ -12,7 +12,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 ERA_HTML_DIR = ROOT_DIR / "data" / "swgoh_gg" / "Eras"
 CONQUEST_HTML_DIR = ROOT_DIR / "data" / "swgoh_gg" / "Conquest"
 CHARACTERS_JSON_PATH = ROOT_DIR / "data" / "swgoh_gg" / "characters.json"
-SHIPS_JSON_PATH = ROOT_DIR / "data" / "ships.json"
+SHIPS_JSON_PATH = ROOT_DIR / "data" / "swgoh_gg" / "ships.json"
 OUTPUT_CSV_PATH = ROOT_DIR / "data" / "unit_era_catalog.csv"
 CONQUEST_ERA_NAME = "Conquest"
 

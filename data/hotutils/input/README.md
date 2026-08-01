@@ -1,6 +1,6 @@
 # Neue CSV-Dateien hier ablegen
 
-Neue CSV-Dateien im HotBot-Format ("guild full roster"!) hier ablegen, dann `encrypt_csvs.py` ausführen.
+Neue CSV-Dateien im HotUtils-Format ("guild full roster"!) hier ablegen, dann `python helper-scripts/encrypt_csvs.py` ausführen.
 
 **Dateiformat:** `YYYY-MM-DD <GuildName>Full.csv`
 

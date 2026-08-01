@@ -63,7 +63,7 @@ def validate_csv_format(filepath):
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             header = f.readline()
-            # Prüfe ob HotBots-Format (bekannte Spalten)
+            # Prüfe ob HotUtils-Format (bekannte Spalten)
             required_columns = ['AllyCode', 'Name', 'BaseId']
             return all(col in header for col in required_columns)
     except Exception as e:

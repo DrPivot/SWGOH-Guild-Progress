@@ -7,10 +7,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CHARACTERS_JSON_PATH = ROOT_DIR / "data" / "swgoh_gg" / "characters.json"
-SHIPS_JSON_CANDIDATE_PATHS = (
-    ROOT_DIR / "data" / "swgoh_gg" / "ships.json",
-    ROOT_DIR / "data" / "ships.json",
-)
+SHIPS_JSON_PATH = ROOT_DIR / "data" / "swgoh_gg" / "ships.json"
 ERA_CATALOG_PATH = ROOT_DIR / "data" / "unit_era_catalog.csv"
 RELIC_BENCHMARKS_PATH = ROOT_DIR / "data" / "relic_benchmarks.csv"
 OUTPUT_CSV_PATH = ROOT_DIR / "data" / "unit_list.csv"
@@ -35,14 +32,6 @@ OUTPUT_COLUMNS = [
 def load_json_records(file_path: Path) -> list[dict[str, object]]:
     with file_path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
-
-
-def resolve_required_path(candidate_paths: tuple[Path, ...], label: str) -> Path:
-    for candidate in candidate_paths:
-        if candidate.exists():
-            return candidate
-    candidates_text = ", ".join(str(candidate) for candidate in candidate_paths)
-    raise FileNotFoundError(f"Required {label} file not found. Checked: {candidates_text}")
 
 
 def load_csv_lookup(file_path: Path, key_field: str) -> dict[str, dict[str, str]]:
@@ -87,9 +76,8 @@ def build_unit_record(unit_data: dict[str, object], default_ship: str = "") -> d
 
 
 def build_base_unit_records() -> list[dict[str, object]]:
-    ships_json_path = resolve_required_path(SHIPS_JSON_CANDIDATE_PATHS, "ships.json")
     characters = load_json_records(CHARACTERS_JSON_PATH)
-    ships = load_json_records(ships_json_path)
+    ships = load_json_records(SHIPS_JSON_PATH)
 
     records: list[dict[str, object]] = []
     seen_base_ids: set[str] = set()
