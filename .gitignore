@@ -30,6 +30,13 @@ wheels/
 # CSV Input Folder (unverschlüsselte CSVs vor Encryption)
 data/hotutils/input/*.csv
 
+# Local SWGOH.GG source files used only to regenerate derived artifacts
+data/ships.json
+data/swgoh_gg/*.json
+data/swgoh_gg/*.html
+data/swgoh_gg/**/*.json
+data/swgoh_gg/**/*.html
+
 # IDE
 .vscode/
 .idea/
