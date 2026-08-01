@@ -2,13 +2,13 @@
 CSV-Verschlüsselungs-Helper für SWGOH Guild Progress
 ====================================================
 
-Verschlüsselt neue CSV-Dateien aus hu_data/input/ nach hu_data/ (verschlüsselt).
+Verschlüsselt neue CSV-Dateien aus data/hotutils/input/ nach data/hotutils/ (verschlüsselt).
 
 Usage:
     python encrypt_csvs.py
 
 Anforderungen:
-    - Neue CSVs in hu_data/input/ ablegen
+    - Neue CSVs in data/hotutils/input/ ablegen
     - Dateiformat: YYYY-MM-DD <GuildName>Full.csv
     - Key in .streamlit/secrets.toml: [encryption] key = "..."
 """
@@ -21,8 +21,8 @@ from cryptography.fernet import Fernet
 import tomli
 
 # Pfade
-INPUT_DIR = Path("hu_data/input")
-OUTPUT_DIR = Path("hu_data")
+INPUT_DIR = Path("data/hotutils/input")
+OUTPUT_DIR = Path("data/hotutils")
 SECRETS_FILE = Path(".streamlit/secrets.toml")
 
 def load_encryption_key():
@@ -172,9 +172,9 @@ def main():
     
     if processed > 0:
         print("\n💡 Nächste Schritte:")
-        print("   1. Überprüfe verschlüsselte Dateien in hu_data/")
+        print("   1. Überprüfe verschlüsselte Dateien in data/hotutils/")
         print("   2. Committe verschlüsselte Dateien ins Git-Repo")
-        print("   3. Original-CSVs aus hu_data/input/ löschen (manuell)")
+        print("   3. Original-CSVs aus data/hotutils/input/ löschen (manuell)")
 
 if __name__ == "__main__":
     main()
